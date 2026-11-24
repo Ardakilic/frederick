@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from manifold3d import Manifold, Mesh64
 
-from geometry.base import build_base
+from geometry.base import build_base, deck_to_world
 from geometry.common import load_config
 
 CFG = load_config()
@@ -202,6 +202,14 @@ def test_frame_rim_and_cable_notch(name, bases):
     assert hits(mesh, CFG.CABLE_NOTCH_X, y)[0] == pytest.approx(deck_z(CFG, y), abs=1e-3)
     beside = CFG.CABLE_NOTCH_X + CFG.CABLE_NOTCH_W / 2 + d["wall"]
     assert hits(mesh, beside, y)[0] == pytest.approx(deck_z(CFG, y) + rim, abs=1e-3)
+
+
+def test_deck_to_world():
+    """The public deck transform matches this file's independent to_world()."""
+    cube = Manifold.cube((3, 5, 7)).translate((1, 2, 3))
+    ours = to_world(CFG, cube).bounding_box()
+    assert cube.transform(deck_to_world(CFG)[:3]).bounding_box() == pytest.approx(ours)
+    assert deck_to_world(CFG)[3] == pytest.approx([0, 0, 0, 1])
 
 
 @pytest.mark.parametrize("name", VARIANTS)

@@ -10,7 +10,9 @@ The page is self-contained: every STL is embedded as gzip + base64 of its exact
 bytes, and the browser decodes it with DecompressionStream, so index.html
 works when opened straight from disk (file://, where fetch() is blocked).
 Only three.js comes from the network (jsDelivr, which sends CORS headers).
-The download links stay plain relative stl/<file> hrefs.
+The download links stay plain relative stl/<file> hrefs. The grinder ghost
+(build/<manifest ghost file>) is embedded the same way for the "Show on
+grinder" view, but never copied to _site/stl/ or linked for download.
 """
 
 import base64
@@ -93,7 +95,8 @@ def build_site(root, out_dir, template=TEMPLATE):
             @MESHES@.
 
     Raises:
-        SystemExit: The manifest, a listed STL or a template placeholder is missing.
+        SystemExit: The manifest, a listed STL, the ghost STL or a template
+            placeholder is missing.
     """
     manifest_path = os.path.join(root, "build", "manifest.json")
     if not os.path.exists(manifest_path):
@@ -103,15 +106,19 @@ def build_site(root, out_dir, template=TEMPLATE):
     with open(template, encoding="utf-8") as f:
         page = f.read()
     files = [it["file"] for g in manifest["groups"] for it in g["items"]]
-    missing = [f for f in files if not os.path.exists(os.path.join(root, "stl", f))]
+    ghost = manifest["ghost"]["file"]
+    missing = [f"stl/{f}" for f in files if not os.path.exists(os.path.join(root, "stl", f))]
+    if not os.path.exists(os.path.join(root, "build", ghost)):
+        missing.append(f"build/{ghost}")
     if missing:
-        raise SystemExit(f"STLs listed in the manifest are missing from stl/: {', '.join(missing)}")
+        raise SystemExit(f"files listed in the manifest are missing (run generate.py): {', '.join(missing)}")
     fills = {
         # inside <script type="application/json">: only "</" could end the element early
         "@MANIFEST@": json.dumps(manifest, ensure_ascii=False).replace("</", "<\\/"),
         "@DOWNLOADS@": downloads_html(manifest),
         "@PARAMETERS@": parameters_html(manifest),
-        "@MESHES@": meshes_html(os.path.join(root, "stl"), files),
+        "@MESHES@": meshes_html(os.path.join(root, "stl"), files) + "\n"
+                    + meshes_html(os.path.join(root, "build"), [ghost]),
     }
     for key, value in fills.items():
         if key not in page:

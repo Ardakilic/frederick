@@ -88,7 +88,47 @@ BELLOWS_RING_H = 8.0       # mm, plug-in ring height; <= SOCKET_DEPTH
 BELLOWS_RING_WALL = 2.0    # mm, plug-in ring wall thickness; ring ID = ring OD - 2 x this
 BELLOWS_FIT_CLEARANCE = 0.3  # mm, diametral; ring OD = SOCKET_ID - this
 BELLOWS_CAP_T = 2.0        # mm, cap thickness
-DOSE_VOLUME_ML = 60.0      # ml, minimum bean capacity of insert + bellows (~20 g beans)
+DOSE_VOLUME_ML = 60.0      # ml, minimum bean capacity of insert + bellows (~20 g beans), and of the two-piece body
+
+# --- Two-piece hopper (body TPU 95A, cap PLA/PETG) -------------------------------
+# Shape reference: the commercial 2-part Fred single-dose hopper - one rubber bellows body
+# (spout, straight conical funnel, ~4 folds, open top) plus a rigid cap that plugs onto the
+# top of the bellows. The body reuses the spout fit, SHOULDER_OD collar, FUNNEL_TOP_ID and
+# the BELLOWS_* folds above; its top collar is BELLOWS_OD outside, BELLOWS_RING_WALL thick.
+TWO_PIECE_WALL = 2.0       # mm, spout and cone wall; a TPU spout needs more wall than SPOUT_WALL
+TWO_PIECE_FUNNEL_H = 35.0  # mm, straight cone height, spout ID -> FUNNEL_TOP_ID, starting TWO_PIECE_WALL above THROAT_DEPTH; half-angle atan((FUNNEL_TOP_ID - spout ID) / 2 / this) must be <= 45° (24.8)
+TWO_PIECE_COLLAR_H = 6.0   # mm, straight bore height of the top collar the cap plugs into
+CAP_T = 3.0                # mm, cap disc thickness
+CAP_LIP = 1.5              # mm, cap disc overhang per side; cap OD = BELLOWS_OD + 2 x this
+CAP_PLUG_H = 5.0           # mm, plug ring height; <= TWO_PIECE_COLLAR_H
+CAP_PLUG_WALL = 2.0        # mm, plug ring wall thickness
+CAP_FIT_CLEARANCE = 0.1    # mm, diametral; plug OD = collar ID - this
+
+# --- Grinder ghost (preview only, approximate) ----------------------------------
+# A boxy stand-in for the grinder, drawn translucent by the preview's "Show on grinder"
+# toggle; context only, never exported to stl/ or offered as a download. Not measured:
+# estimated from a Cremashop side render and the Lelit front render, scaled against the
+# 180 mm plate and the Ø120 stock hopper. Grinder frame: origin at the centre of the plate
+# underside, z up from it, Y front -> back, + X = right (as CABLE_NOTCH_X).
+GHOST_PLATE_T = 2.0          # mm, plate thickness; render estimate, medium
+GHOST_SHELL_W = 90.0         # mm, stainless shell width L-R; render estimate, medium
+GHOST_SHELL_D = 123.0        # mm, shell depth, flush with the plate's rear edge (plate ~55 proud in front); render estimate, medium
+GHOST_SHELL_TOP = 146.0      # mm, shell top above the plate underside; render estimate, medium
+GHOST_CHUTE_W = 37.0         # mm, chute tower width L-R; render estimate, medium-low
+GHOST_CHUTE_PROUD = 32.0     # mm, chute tower depth in front of the shell; render estimate, medium-low
+GHOST_CHUTE_BOTTOM = 117.0   # mm, chute tower underside; it runs up to the shell top; render estimate, medium-low
+GHOST_HOUSING_D = 64.0       # mm, black burr housing Ø, from the shell top up to the ring; render estimate, medium
+GHOST_RING_D = 70.0          # mm, ring Ø the hopper collar sits on (throat bore THROAT_ID x THROAT_DEPTH); render, high
+GHOST_RING_H = 9.0           # mm, ring height; render estimate, low-medium
+GHOST_RING_TOP = 200.0       # mm, ring top face above the plate underside; render estimate, low-medium
+GHOST_RING_FROM_BACK = 74.0  # mm, ring (and throat) centre in front of the plate's rear edge, centred L-R; render estimate, medium
+GHOST_FORK_Z = 68.0          # mm, portafilter fork tine height (centre); render estimate, low
+GHOST_FORK_REACH = 42.0      # mm, fork reach in front of the shell; render estimate, low
+GHOST_FORK_GAP = 60.0        # mm, fork tine centre-to-centre L-R; guess, low
+GHOST_FORK_T = 4.0           # mm, square fork tine section; guess, low
+GHOST_KNOB_D = 25.0          # mm, side knob Ø, axis along X at ring-top height; render estimate, low
+GHOST_KNOB_L = 15.0          # mm, knob length, from the centre plane out to the right (so it joins the ring); low
+GHOST_KNOB_BEHIND = 40.0     # mm, knob axis behind the ring centre; render estimate, low
 
 # --- Mesh ---------------------------------------------------------------------
 SEGMENTS = 128             # count, circle resolution

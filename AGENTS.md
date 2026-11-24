@@ -2,7 +2,8 @@
 
 Parametric, 3D-printable accessories for the **Lelit Fred (PL043MMI)** coffee
 grinder: an angled base (4 variants), a single-dose hopper insert (2 variants)
-and a TPU bellows. Python builds the STLs; a three.js page previews them.
+and a TPU bellows, or a two-piece hopper (TPU body + rigid cap). Python builds
+the STLs; a three.js page previews them.
 
 Remote: `github.com/Ardakilic/frederick`. Site: <https://ardakilic.github.io/frederick/>
 (GitHub Pages, deployed by `.github/workflows/pages.yml` on every push to `main`).
@@ -20,17 +21,19 @@ config.py                  every design parameter, one commented UPPER_CASE cons
 generate.py                builds every part -> stl/*.stl + build/manifest.json; CLI overrides
 geometry/common.py         config load/validate/--set, shapely -> manifold3d -> trimesh helpers
 geometry/base.py           angled base: deck frame, pockets, frame/rim, window, pads, cable notch
-geometry/hopper.py         single-dose insert (+ screw hub) and TPU bellows, revolved profiles
-tools/build_site.py        _site/: template + manifest + embedded gzip/base64 STLs, copies stl/
+geometry/hopper.py         single-dose insert (+ screw hub), TPU bellows, two-piece body + cap, assembly poses; revolved profiles
+geometry/grinder.py        grinder ghost (preview only, approximate) + poses: throat, on the base, upright
+tools/build_site.py        _site/: template + manifest + embedded gzip/base64 STLs and ghost, copies stl/
 preview/template.html      the preview page: CSS, import map, three.js viewer module
 tests/test_base.py         base geometry, measured with vertical rays
-tests/test_hopper.py       insert (both variants) and bellows
+tests/test_hopper.py       insert (both variants), bellows, two-piece body + cap, assembly poses
+tests/test_grinder.py      ghost body, ghost fit on every base and of the hopper in the throat, placements
 tests/test_common.py       mesh helpers
 tests/test_config.py       config loading, validation, --set
 tests/test_generate.py     manifest logic (no geometry needed)
 tests/test_site.py         site build: embedded meshes round-trip, links, placeholders
 stl/                       generated STLs, COMMITTED deliverables (print orientation)
-build/, _site/             generated, gitignored (manifest; the Pages site)
+build/, _site/             generated, gitignored (manifest + grinder ghost STL; the Pages site)
 Dockerfile                 python:3.14-slim + the pinned wheels; HOME=/tmp
 Makefile                   every command, run in Docker as the host uid:gid
 requirements*.txt          == pins (mesh stack; pytest and its deps)
@@ -93,7 +96,7 @@ is built. `--angle` is a shortcut for `BASE_ANGLE`.
   embeds every STL as gzip + base64 of its exact bytes, one
   `<script type="application/octet-stream" id="mesh-<file stem>">` each. The
   page decodes with `DecompressionStream("gzip")` and `STLLoader.parse()`. No
-  `fetch()`, so `_site/index.html` works from `file://` (about 0.8 MB). three.js
+  `fetch()`, so `_site/index.html` works from `file://` (about 1.7 MB). three.js
   loads by dynamic `import()` from jsDelivr (sends CORS headers), so an offline
   load is caught and explained. Download links stay plain `stl/<file>.stl`.
 - **CI regenerates, tests, then deploys.** The workflow runs `make image`, then
@@ -139,12 +142,12 @@ Read the code for exact formulas; this is the map.
 
 ### Hopper (`geometry/hopper.py`)
 
-Both parts are solids of revolution: an (r, z) envelope minus a void, revolved
-with `SEGMENTS`. **Print orientation:** insert spout down, bellows cap down,
-z=0 on the bed. **No-overhang rule:** every downward-facing surface is at most
-`MAX_OVERHANG` = 45° from vertical, so neither part needs supports; the
-profiles are built from 45° (or steeper) lines and the builders reject
-parameters that would break that.
+Every part is a solid of revolution: an (r, z) envelope minus a void, revolved
+with `SEGMENTS`. **Print orientation:** insert and two-piece body spout down,
+bellows cap down, two-piece cap top face down, z=0 on the bed. **No-overhang
+rule:** every downward-facing surface is at most `MAX_OVERHANG` = 45° from
+vertical, so no part needs supports; the profiles are built from 45° (or
+steeper) lines and the builders reject parameters that would break that.
 
 - **Insert** (`build_insert(cfg, screw_hub=)`), bottom up: the spout (OD
   `THROAT_ID - SPOUT_CLEARANCE`, `THROAT_DEPTH` long) into the throat; a 45°
@@ -158,7 +161,47 @@ parameters that would break that.
 - **Bellows** (`build_bellows`): cap down, then zig-zag folds with 45° flanks
   (`BELLOWS_FOLD_PITCH` >= 2 x `BELLOWS_FOLD_DEPTH`), then the plug-in ring
   (OD `SOCKET_ID - BELLOWS_FIT_CLEARANCE`) that pushes into the insert socket.
-  The tests enforce the combined capacity >= `DOSE_VOLUME_ML`.
+  The tests enforce the combined capacity >= `DOSE_VOLUME_ML`. `_folds()`
+  builds the zig-zag (and checks the flanks) for both the bellows and the body.
+- **Two-piece body** (`build_two_piece_body`, TPU 95A; reference: the commercial
+  2-part Fred hopper), bottom up: the insert's spout and 45° collar, walls
+  `TWO_PIECE_WALL`; the bore runs a wall past the spout top, then a straight
+  cone to `FUNNEL_TOP_ID` over `TWO_PIECE_FUNNEL_H` (half-angle <= 45°); the
+  bellows folds, placed so the first flank's inner face starts at the cone top;
+  a 45° chamfer in to the top collar (OD `BELLOWS_OD`, wall `BELLOWS_RING_WALL`,
+  straight bore `TWO_PIECE_COLLAR_H`). Open on top.
+- **Two-piece cap** (`build_two_piece_cap`, PLA/PETG): a `CAP_T` disc, OD
+  `BELLOWS_OD + 2 * CAP_LIP`, with a plug ring (`CAP_PLUG_H` <=
+  `TWO_PIECE_COLLAR_H`, wall `CAP_PLUG_WALL`, OD collar ID - `CAP_FIT_CLEARANCE`).
+  Nothing else: a recessed face would bridge on the bed side.
+- **Assembly** (`assembly_poses(cfg)`): STL stem -> 4x4 pose from print
+  orientation into the hopper frame (spout bottom at the origin, z up). Inserts
+  and body: identity; bellows flipped onto the socket ledge; cap flipped, disc
+  on the collar top. The tests check each pair touches without overlapping.
+
+### Grinder ghost (`geometry/grinder.py`, preview only)
+
+No usable model of the Fred exists, so `build_grinder_ghost(cfg)` makes a boxy
+stand-in from the `GHOST_*` constants: plate, four feet, stainless shell
+(flush with the plate's rear edge), chute tower, black housing cylinder, ring
+with the `THROAT_ID` x `THROAT_DEPTH` bore, two fork tines and a side knob.
+**Every `GHOST_*` value is an estimate** from a Cremashop side render and the
+Lelit front render, scaled against the 180 mm plate and the Ø120 hopper (see
+the confidence in each config comment); the ghost is context, not a fit
+reference. Pieces run into their neighbours so the union is one body.
+**Grinder frame:** origin at the centre of the plate underside, z up, Y front
+-> back, +X right (as `CABLE_NOTCH_X`). Poses (4x4): `throat_pose` hopper
+frame -> grinder frame (spout bottom on the bore floor, collar on the ring
+top); `grinder_on_base_pose` grinder frame -> base world, reusing
+`base.deck_to_world` (plate centre over the deck centre, plate underside at
+w = `FOOT_H - POCKET_DEPTH`); `grinder_upright_pose` feet on z = 0.
+`generate.py` writes the ghost to `build/frederick-grinder-ghost.stl` (never
+`stl/`) and gives each manifest entry `placement` and `ghost_placement`
+(row-major 16 floats: the page uses `Matrix4.set(...m)`; `fromArray` would
+transpose) plus `partners` (insert <-> bellows, body <-> cap). The page's
+"Show on grinder" toggle (off by default) draws the ghost translucent
+(opacity 0.25, no depth writes), the part in assembly position and its
+partners faint, and refits the camera. The ghost is embedded, never linked.
 
 ## Research and sources
 
@@ -173,6 +216,7 @@ parameters that would break that.
 | Stock hopper | MC342-250, Ø34 spout, held by central screw CD553INOX (size unverified, M4 guessed) | Lelit parts diagram | high (parts), low (screw size) |
 | Cord gland | CD361, low on the back panel just above the plate | Lelit parts diagram | medium (position unverified) |
 | Seat ring face | `SHOULDER_OD` 40 | Papel collar, about 1.2 x the spout OD | low |
+| Grinder ghost (shell 90 x 123 x 146, ring Ø70 top at 200, 74 from the back, fork, knob) | `GHOST_*` | Cremashop side render + Lelit front render, scaled to the 180 plate and Ø120 hopper | low to medium (ring Ø high); preview only |
 
 - Lelit parts diagram:
   <https://www.espresso.co.nz/content/Spare_Part_Diagrams/LELIT/LELIT_PL043MMI-Spare_Parts.pdf>

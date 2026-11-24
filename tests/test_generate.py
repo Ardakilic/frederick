@@ -1,9 +1,10 @@
 """Tests for generate.py's manifest logic (no geometry modules needed)."""
 
+import numpy as np
 import pytest
 import trimesh
 
-from generate import build_manifest, part_entry
+from generate import GHOST_FILE, build_manifest, kit_partners, part_entry, row_major
 from geometry.common import load_config
 
 
@@ -45,3 +46,50 @@ def test_build_manifest_groups_and_parameters():
     params = dict(m["parameters"])
     assert params["Base angle"] == "12°"
     assert params["Spout OD"] == "33.6 mm"
+    assert m["ghost"] == {"file": GHOST_FILE} and GHOST_FILE.endswith(".stl")
+
+
+def test_row_major_round_trip():
+    """Matrices go out row-major: reshape(4, 4) restores them; the translation sits at 3, 7, 11.
+
+    three.js Matrix4.set() takes row-major arguments; fromArray() reads column-major,
+    so it would see the transpose, which for a pose with a translation is a different matrix.
+    """
+    pose = trimesh.transformations.rotation_matrix(0.3, (1, 0, 0))
+    pose[:3, 3] = (1, 2, 3)
+    flat = row_major(pose)
+    assert len(flat) == 16 and np.reshape(flat, (4, 4)) == pytest.approx(pose, abs=1e-6)
+    assert [flat[3], flat[7], flat[11]] == [1, 2, 3] and flat[12:] == [0, 0, 0, 1]
+    assert not np.allclose(np.reshape(flat, (4, 4), order="F"), pose)   # what fromArray() would build
+
+
+@pytest.mark.parametrize("kind, partners", [
+    ("base", []),
+    ("insert", ["frederick-hopper-bellows.stl"]),
+    ("bellows", ["frederick-hopper-insert-friction.stl"]),
+    ("2p-body", ["frederick-hopper-2p-cap.stl"]),
+    ("2p-cap", ["frederick-hopper-2p-body.stl"]),
+])
+def test_kit_partners(kind, partners):
+    """Insert <-> bellows and body <-> cap are shown together; the base has no partners.
+
+    Args:
+        kind: PRINT_INFO key.
+        partners: Expected partner files.
+    """
+    assert kit_partners(load_config(), kind) == partners
+
+
+@pytest.mark.parametrize("kind, material, hint", [("2p-body", "TPU 95A", "spout down"),
+                                                  ("2p-cap", "PLA/PETG", "top face down")])
+def test_two_piece_print_info(kind, material, hint):
+    """The two-piece hopper parts carry their own material and support-free print hint.
+
+    Args:
+        kind: PRINT_INFO key.
+        material: Expected material.
+        hint: Text the print hint must contain.
+    """
+    e = part_entry(box_on_bed(), "x.stl", "X", kind)
+    assert e["material"] == material
+    assert hint in e["hint"] and "no supports" in e["hint"]

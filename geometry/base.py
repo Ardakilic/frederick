@@ -10,6 +10,7 @@ to the deck); the outer walls, window and pad recesses are world-vertical.
 
 import math
 
+import numpy as np
 from manifold3d import Manifold
 from shapely.geometry import MultiPolygon, Point, Polygon, box
 
@@ -35,6 +36,21 @@ def _rounded_rect(x0, y0, x1, y1, r, segments):
     return box(x0 + r, y0 + r, x1 - r, y1 - r).buffer(r, quad_segs=max(1, segments // 4))
 
 
+def deck_to_world(cfg):
+    """The deck frame as a transform: deck coordinates (x, u, w) -> world coordinates.
+
+    Args:
+        cfg: Config namespace from load_config().
+
+    Returns:
+        4x4 numpy array: x = world X, u up the slope, w the deck normal,
+        origin at (0, 0, BASE_FRONT_H).
+    """
+    a = math.radians(cfg.BASE_ANGLE)
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[1, 0, 0, 0], [0, c, -s, 0], [0, s, c, cfg.BASE_FRONT_H], [0, 0, 0, 1]])
+
+
 def _to_world(cfg, m):
     """Map a Manifold built in deck coordinates (x, u, w) into world coordinates.
 
@@ -45,9 +61,7 @@ def _to_world(cfg, m):
     Returns:
         manifold3d.Manifold in the world frame.
     """
-    a = math.radians(cfg.BASE_ANGLE)
-    c, s = math.cos(a), math.sin(a)
-    return m.transform([[1, 0, 0, 0], [0, c, -s, 0], [0, s, c, cfg.BASE_FRONT_H]])
+    return m.transform(deck_to_world(cfg)[:3])
 
 
 def build_base(cfg, *, frame, window):

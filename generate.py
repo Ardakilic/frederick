@@ -3,7 +3,8 @@
     python3 generate.py [--angle DEG] [--set NAME=VALUE ...]
 
 Meshes are in mm, in print orientation, with z=0 on the bed; each one must be
-watertight before it is exported. tools/build_site.py turns the manifest
+watertight before it is exported. The grinder ghost (preview context only, not
+a part) goes to build/, never stl/. tools/build_site.py turns the manifest
 into the preview page.
 """
 
@@ -11,15 +12,20 @@ import argparse
 import json
 import os
 
+import numpy as np
+
 from geometry.common import add_cli_args, config_from_args
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+GHOST_FILE = "frederick-grinder-ghost.stl"  # in build/: preview only, never a download
 
 # kind -> (material, print hint)
 PRINT_INFO = {
     "base": ("PLA/PETG", "4 walls, 20-30 % infill, no supports, deck up"),
     "insert": ("PLA/PETG", "spout down, no supports"),
     "bellows": ("TPU 95A", "cap on the bed, no supports; 3+ walls or 100 % infill is fine"),
+    "2p-body": ("TPU 95A", "spout down, no supports"),
+    "2p-cap": ("PLA/PETG", "top face down, no supports"),
 }
 
 
@@ -36,17 +42,20 @@ def build_parts(cfg):
         List of (group, file, label, kind, trimesh.Trimesh).
     """
     from geometry.base import build_base
-    from geometry.hopper import build_bellows, build_insert
+    from geometry.hopper import build_bellows, build_insert, build_two_piece_body, build_two_piece_cap
 
     parts = []
     for name, flags in cfg.BASE_VARIANTS.items():
         parts.append(("Angled base", f"frederick-base-{name}.stl", _pretty(name), "base",
                       build_base(cfg, frame=flags["frame"], window=flags["window"])))
+    hopper = "Single-dose hopper"
     for name, flags in cfg.INSERT_VARIANTS.items():
-        parts.append(("Single-dose hopper", f"frederick-hopper-insert-{name}.stl", f"Insert, {name}",
+        parts.append((hopper, f"frederick-hopper-insert-{name}.stl", f"Insert + bellows: {name} insert",
                       "insert", build_insert(cfg, screw_hub=flags["screw_hub"])))
-    parts.append(("Single-dose hopper", "frederick-hopper-bellows.stl", "Bellows", "bellows",
+    parts.append((hopper, "frederick-hopper-bellows.stl", "Insert + bellows: bellows", "bellows",
                   build_bellows(cfg)))
+    parts.append((hopper, "frederick-hopper-2p-body.stl", "Two-piece: body", "2p-body", build_two_piece_body(cfg)))
+    parts.append((hopper, "frederick-hopper-2p-cap.stl", "Two-piece: cap", "2p-cap", build_two_piece_cap(cfg)))
     return parts
 
 
@@ -93,6 +102,62 @@ def part_entry(mesh, file, label, kind):
     }
 
 
+def row_major(matrix):
+    """Flatten a 4x4 matrix for the manifest.
+
+    Row-major, so the page reads it with three.js Matrix4.set(...m);
+    Matrix4.fromArray() expects column-major and would transpose it.
+
+    Args:
+        matrix: 4x4 array-like.
+
+    Returns:
+        List of 16 floats, rounded to 6 decimals.
+    """
+    return [round(float(v), 6) for v in np.asarray(matrix, dtype=float).ravel()]
+
+
+def kit_partners(cfg, kind):
+    """The parts the preview shows faintly with this one, so the hopper looks complete.
+
+    Args:
+        cfg: Config namespace from load_config().
+        kind: Key of PRINT_INFO.
+
+    Returns:
+        List of STL file names (empty for the base).
+    """
+    insert = f"frederick-hopper-insert-{next(iter(cfg.INSERT_VARIANTS))}.stl"
+    return {"insert": ["frederick-hopper-bellows.stl"], "bellows": [insert],
+            "2p-body": ["frederick-hopper-2p-cap.stl"], "2p-cap": ["frederick-hopper-2p-body.stl"]}.get(kind, [])
+
+
+def view_fields(cfg, file, kind):
+    """Where the part and the grinder ghost go in the preview's "Show on grinder" view.
+
+    A base stays put and the ghost stands in its pockets; a hopper part is
+    posed into the throat of the ghost standing upright on the table.
+
+    Args:
+        cfg: Config namespace from load_config().
+        file: STL file name; for hopper parts its stem keys assembly_poses().
+        kind: Key of PRINT_INFO.
+
+    Returns:
+        Dict with placement and ghost_placement (row_major() 4x4s, from the
+        STL's own frame into the view) and partners (kit_partners()).
+    """
+    from geometry.grinder import grinder_on_base_pose, grinder_upright_pose, throat_pose
+    from geometry.hopper import assembly_poses
+
+    if kind == "base":
+        part, ghost = np.eye(4), grinder_on_base_pose(cfg)
+    else:
+        ghost = grinder_upright_pose(cfg)
+        part = ghost @ throat_pose(cfg) @ assembly_poses(cfg)[file.removesuffix(".stl")]
+    return {"placement": row_major(part), "ghost_placement": row_major(ghost), "partners": kit_partners(cfg, kind)}
+
+
 def build_manifest(cfg, entries):
     """Group part entries and add the parameter table.
 
@@ -101,7 +166,8 @@ def build_manifest(cfg, entries):
         entries: List of (group, part_entry dict), in display order.
 
     Returns:
-        Manifest dict: {"groups": [{"name", "items"}], "parameters": [[name, value]]}.
+        Manifest dict: {"groups": [{"name", "items"}], "parameters": [[name, value]],
+        "ghost": {"file"}} (the ghost STL lives in build/).
     """
     groups = {}
     for group, entry in entries:
@@ -119,11 +185,11 @@ def build_manifest(cfg, entries):
         ["Bellows folds", f"{c.BELLOWS_FOLDS}"],
     ]
     return {"groups": [{"name": g, "items": items} for g, items in groups.items()],
-            "parameters": parameters}
+            "parameters": parameters, "ghost": {"file": GHOST_FILE}}
 
 
 def main(argv=None):
-    """Build the STLs and the manifest.
+    """Build the STLs, the grinder ghost (build/) and the manifest.
 
     Args:
         argv: Command-line arguments (default: sys.argv[1:]).
@@ -134,11 +200,15 @@ def main(argv=None):
     os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
     entries = []
     for group, file, label, kind, mesh in build_parts(cfg):
-        entry = part_entry(mesh, file, label, kind)
+        entry = part_entry(mesh, file, label, kind) | view_fields(cfg, file, kind)
         mesh.export(os.path.join(ROOT, "stl", file))
         entries.append((group, entry))
         size = " × ".join(f"{v:g}" for v in entry["size_mm"])
         print(f"stl/{file}: {size} mm, {entry['volume_cm3']} cm³, {entry['triangles']} triangles")
+    from geometry.grinder import build_grinder_ghost
+
+    build_grinder_ghost(cfg).export(os.path.join(ROOT, "build", GHOST_FILE))
+    print(f"build/{GHOST_FILE}: approximate grinder, preview context only")
     with open(os.path.join(ROOT, "build", "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(build_manifest(cfg, entries), f, indent=2, ensure_ascii=False)
     print("build/manifest.json")

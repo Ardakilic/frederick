@@ -54,6 +54,20 @@ TPU cap that plugs into the insert socket; press it to blow out retained grounds
 | Cap | 2 thick |
 | Capacity | about 250 ml with the insert (bulb 89 + bellows 160); `DOSE_VOLUME_ML` = 60 is the minimum the tests enforce |
 
+### Two-piece hopper: `stl/frederick-hopper-2p-body.stl` + `stl/frederick-hopper-2p-cap.stl`
+
+The alternative to insert + bellows, shaped after the commercial 2-part Fred single-dose hopper: one TPU body (spout, straight conical funnel, bellows, open top) and a rigid cap that plugs onto it. Lift the cap off to load beans; press it to blow out retained grounds.
+
+| | |
+|---|---|
+| Body | Ø70 × 111.3, 35.8 cm³, TPU 95A |
+| Spout | OD 33.6, ID 29.6 (2 wall), 20 long; the insert's 45° shoulder out to the `SHOULDER_OD` 40 collar |
+| Cone | straight, from the spout ID to Ø62 over 35, 2 wall, 24.8° from vertical; starts 2 above the spout top (the bore runs on, so the corner keeps the full wall) |
+| Folds | 4, the bellows' 11 pitch × 5.5 deep (45° flanks), 1.2 wall, peaks Ø70 |
+| Top collar | Ø70 outside, bore Ø66 × 6 straight (2 wall) |
+| Cap | Ø73 × 3 disc (1.5 lip) with a plug ring OD 65.9 (0.1 clearance in the collar) × 5 tall, 2 wall; 73 × 73 × 8, 14.6 cm³ |
+| Capacity | about 226 ml (cone 61 + bellows and collar 165) |
+
 The variants are listed in `BASE_VARIANTS` and `INSERT_VARIANTS` in `config.py`.
 
 ## Measure your grinder before printing
@@ -93,12 +107,16 @@ You need Docker and make. Nothing is installed on the host.
 | Base | PLA or PETG | deck up, no supports, 4 walls, 20–30 % infill |
 | Insert | PLA or PETG | spout down, no supports |
 | Bellows | TPU 95A | cap on the bed, no supports; 3+ walls or 100 % infill |
+| Two-piece body | TPU 95A | spout down, no supports |
+| Two-piece cap | PLA or PETG | top face down, no supports |
 
 ## Preview site (GitHub Pages)
 
 Live at <https://ardakilic.github.io/frederick/>. `make site` builds the same page locally into `_site/`.
 
-The page is fully static and self-contained. Every STL is embedded in `_site/index.html` (gzip + base64 of the exact file bytes, under 1 MB in total), and the browser decodes it itself. That means you can **double-click `_site/index.html`** and it works from disk, with no server. `make serve` is still there if you prefer `http://localhost`. Only three.js comes from the network (pinned jsDelivr import map); offline, the page says so, and the downloads still work. The download links are plain `stl/<file>.stl` files next to the page.
+The page is fully static and self-contained. Every STL is embedded in `_site/index.html` (gzip + base64 of the exact file bytes, about 1.7 MB in total), and the browser decodes it itself. That means you can **double-click `_site/index.html`** and it works from disk, with no server. `make serve` is still there if you prefer `http://localhost`. Only three.js comes from the network (pinned jsDelivr import map); offline, the page says so, and the downloads still work. The download links are plain `stl/<file>.stl` files next to the page.
+
+**Show on grinder.** The toggle under the part buttons (off by default) puts the selected part in context: a base with the grinder standing in its pockets, or a hopper part seated in the throat with its kit partner (insert + bellows, body + cap) shown faintly. The grinder is a translucent, boxy ghost built from the `GHOST_*` estimates in `config.py` (scaled from product renders, not measured). It's approximate, for context only, and not a download.
 
 `.github/workflows/pages.yml` runs `make image`, then `make generate test site`, on every push to `main`, and deploys `_site/` to GitHub Pages as static files. If a test fails, nothing is deployed. **One-time setup:** *Settings > Pages > Build and deployment > Source: GitHub Actions*.
 

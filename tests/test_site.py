@@ -24,7 +24,9 @@ MANIFEST = {
         ]},
     ],
     "parameters": [["Base angle", "10°"], ["Throat ID", "33.8 mm"]],
+    "ghost": {"file": "frederick-grinder-ghost.stl"},
 }
+GHOST = MANIFEST["ghost"]["file"]
 FILES = ["frederick-base-solid.stl", "frederick-hopper-bellows.stl"]
 PLACEHOLDERS = ("@MANIFEST@", "@DOWNLOADS@", "@PARAMETERS@", "@MESHES@")
 
@@ -48,6 +50,7 @@ def root(tmp_path):
     for i, f in enumerate(FILES):
         (tmp_path / "stl" / f).write_bytes(random.Random(i).randbytes(5000 + i))
     (tmp_path / "stl" / "stale-unlisted.stl").write_bytes(b"old")
+    (tmp_path / "build" / GHOST).write_bytes(random.Random(9).randbytes(3000))
     return tmp_path
 
 
@@ -73,7 +76,7 @@ def test_every_stl_embedded_byte_exact(root, page):
         page: Generated page fixture.
     """
     blocks = dict(re.findall(r'<script type="application/octet-stream" id="mesh-([^"]+)">([^<]*)</script>', page))
-    assert sorted(blocks) == sorted(f.removesuffix(".stl") for f in FILES)
+    assert sorted(blocks) == sorted(f.removesuffix(".stl") for f in FILES + [GHOST])
     for f in FILES:
         decoded = gzip.decompress(base64.b64decode(blocks[f.removesuffix(".stl")], validate=True))
         assert decoded == (root / "stl" / f).read_bytes()
@@ -139,4 +142,41 @@ def test_missing_stl_fails(root):
     """
     (root / "stl" / FILES[0]).unlink()
     with pytest.raises(SystemExit, match=FILES[0]):
+        build_site(root, root / "_site")
+
+
+def test_ghost_embedded_not_downloadable(root, page):
+    """The ghost is embedded byte-exact from build/, but never linked or copied to _site/stl/.
+
+    Args:
+        root: Fake repo root fixture.
+        page: Generated page fixture.
+    """
+    stem = GHOST.removesuffix(".stl")
+    block = re.search(rf'<script type="application/octet-stream" id="mesh-{stem}">([^<]*)</script>', page)
+    assert gzip.decompress(base64.b64decode(block.group(1), validate=True)) == (root / "build" / GHOST).read_bytes()
+    assert stem not in "".join(re.findall(r'<a href="[^"]*"', page))
+    assert not (root / "_site" / "stl" / GHOST).exists()
+
+
+def test_show_on_grinder_ui(page):
+    """The toggle starts off, the approximation note is there, and matrices are read row-major.
+
+    Args:
+        page: Generated page fixture.
+    """
+    assert re.search(r'<input type="checkbox" id="on-grinder">\s*Show on grinder', page)
+    assert "Approximate grinder for context — not a measured model." in page
+    assert "new THREE.Matrix4().set(...m)" in page and ".fromArray(" not in page.split("<script type=\"module\">")[1]
+    assert "depthWrite: false" in page
+
+
+def test_missing_ghost_fails(root):
+    """A manifest whose ghost STL is missing from build/ is rejected.
+
+    Args:
+        root: Fake repo root fixture.
+    """
+    (root / "build" / GHOST).unlink()
+    with pytest.raises(SystemExit, match=GHOST):
         build_site(root, root / "_site")
