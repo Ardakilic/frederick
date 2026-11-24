@@ -1,0 +1,14 @@
+# Pinned on purpose: the mesh stack decides triangulation and last-bit floats,
+# so a floating toolchain rewrites every committed STL. To upgrade: bump,
+# `make image all`, check the printed sizes/volumes, commit the regenerated
+# STLs together with this file. `pip freeze` in the image lists exactly these
+# (numpy is the only shared dependency), so there are no extra transitive pins.
+numpy==2.5.3
+shapely==2.1.2
+trimesh==5.1.0
+manifold3d==3.5.3
+mapbox_earcut==2.1.0
+# trimesh extras: ray queries (rtree), sections / splitting (scipy, networkx)
+rtree==1.4.1
+scipy==1.18.1
+networkx==3.6.1

@@ -1,0 +1,65 @@
+# Builds the frederick preview from source and publishes it to GitHub Pages on
+# every push to main.
+#
+# Same Docker-wrapped make targets as a local build: `make image`, then
+# `make generate test site`. If a test fails, make exits non-zero, the job
+# fails and nothing is deployed (the last good page stays up).
+#
+# One-time setup: Settings > Pages > Build and deployment > Source: GitHub Actions.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One Pages deployment at a time; a newer run waits instead of cancelling.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pages: read # actions/configure-pages reads the site settings
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Pages
+        uses: actions/configure-pages@v6
+
+      - name: Build the Docker image
+        run: make image
+
+      - name: Generate STLs, test, assemble the site
+        run: make generate test site
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+          include-hidden-files: true # keep .nojekyll
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,6 @@
+_site/
+build/
+__pycache__/
+.pytest_cache/
+# NOT ignored on purpose: stl/*.stl are committed deliverables
+examples/

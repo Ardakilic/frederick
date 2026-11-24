@@ -1,0 +1,248 @@
+<!doctype html>
+<!--
+  Template for _site/index.html. tools/build_site.py fills the four
+  at-sign placeholders (and fails if one is missing). Every STL is embedded
+  below as gzip + base64 (one octet-stream script per file) and decoded in
+  the browser, so the page needs no server: it works from file://, on
+  GitHub Pages and on `make serve` alike. Only three.js comes from the
+  network (pinned jsDelivr import map). Download links are plain stl/<file>.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>frederick - Lelit Fred accessories</title>
+<meta name="description" content="Parametric, 3D-printable angled base and single-dose hopper for the Lelit Fred PL043MMI grinder.">
+<meta name="color-scheme" content="light dark">
+<style>
+:root {
+  --bg: #f6f4f1; --surface: #ffffff; --text: #1f1c19; --muted: #6b645c;
+  --line: #e2ddd6; --accent: #8a5a2b; --accent-text: #ffffff; --viewer: #ece8e2;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161412; --surface: #1f1c19; --text: #ece8e2; --muted: #a39b91;
+    --line: #34302b; --accent: #d49a5f; --accent-text: #161412; --viewer: #12100e;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { margin: 0; font-size: 1.8rem; letter-spacing: -0.01em; }
+h2 { margin: 40px 0 12px; font-size: 1.25rem; }
+h3 { margin: 20px 0 8px; font-size: 1rem; }
+p { margin: 0 0 12px; }
+a { color: var(--accent); }
+code { font: 0.85em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lede { color: var(--muted); margin: 4px 0 24px; }
+.layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 300px; }
+@media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+#view {
+  position: relative; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden;
+  background: var(--viewer); border: 1px solid var(--line);
+}
+#view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#status {
+  position: absolute; inset: auto 12px 12px; margin: 0; color: var(--muted);
+  font-size: 0.875rem; pointer-events: none;
+}
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px 16px 16px; }
+.variants { display: flex; flex-wrap: wrap; gap: 8px; }
+.variants button {
+  font: inherit; font-size: 0.875rem; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent; color: var(--text);
+}
+.variants button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.variants button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#info { margin-top: 16px; font-size: 0.875rem; color: var(--muted); }
+#info strong { color: var(--text); }
+ul.downloads { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+ul.downloads li {
+  display: grid; gap: 2px; padding: 12px 16px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line);
+}
+ul.downloads a { font-weight: 600; }
+ul.downloads code, ul.downloads .meta { color: var(--muted); font-size: 0.8rem; }
+table { border-collapse: collapse; width: 100%; max-width: 560px; }
+th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); font-weight: normal; }
+td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+th { color: var(--muted); }
+pre {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 16px; overflow-x: auto;
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>frederick</h1>
+  <p class="lede">Parametric, 3D-printable accessories for the Lelit Fred (PL043MMI) grinder: an angled base and a single-dose hopper.</p>
+
+  <div class="layout">
+    <div id="view"><p id="status">The 3D preview needs JavaScript and WebGL; the downloads below work without it.</p></div>
+    <div class="panel">
+      <div id="picker"></div>
+      <p id="info"></p>
+    </div>
+  </div>
+
+  <h2>Download the STLs</h2>
+  <p>All parts are in millimetres, already in print orientation. The grinder figures behind them are estimates: measure yours and rebuild if they differ.</p>
+  @DOWNLOADS@
+
+  <h2>Parameters used</h2>
+  <table><tbody>
+  @PARAMETERS@
+  </tbody></table>
+
+  <h2>Customise</h2>
+  <p>Every dimension lives in <code>config.py</code>. Edit it, or override values for one build, then rebuild (Docker only, nothing to install):</p>
+  <pre><code>make generate GEN_ARGS="--angle 12"
+make generate GEN_ARGS="--set FOOT_D=22.0 --set THROAT_ID=34.2"
+make site     # then open _site/index.html (or: make serve)</code></pre>
+</main>
+
+<script id="manifest" type="application/json">@MANIFEST@</script>
+@MESHES@
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+const manifest = JSON.parse(document.getElementById("manifest").textContent);
+const view = document.getElementById("view");
+const status = document.getElementById("status");
+const info = document.getElementById("info");
+
+// Dynamic imports: a failed CDN load (offline) lands in catch instead of killing the script.
+let THREE, STLLoader, OrbitControls;
+try {
+  [THREE, { STLLoader }, { OrbitControls }] = await Promise.all([
+    import("three"),
+    import("three/addons/loaders/STLLoader.js"),
+    import("three/addons/controls/OrbitControls.js"),
+  ]);
+} catch (e) {
+  status.textContent = "The 3D viewer could not load three.js from cdn.jsdelivr.net (offline?). " +
+    "Reload when online; the downloads below work without it.";
+  throw e;
+}
+if (typeof DecompressionStream === "undefined") {
+  status.textContent = "This browser is too old for the 3D preview (it needs DecompressionStream). " +
+    "The downloads below still work.";
+  throw new Error("DecompressionStream unsupported");
+}
+
+// STL bytes are embedded in the page (gzip + base64), so nothing is fetched: works from file://.
+async function stlBuffer(file) {
+  const b64 = document.getElementById("mesh-" + file.replace(/\.stl$/, "")).textContent.trim();
+  const gz = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  return new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+}
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+view.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 1, 5000);
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(1, 2, 3);
+camera.add(sun);  // light follows the camera, so every side gets lit
+scene.add(camera, new THREE.HemisphereLight(0xffffff, 0x50463c, 1.2));
+const grid = new THREE.GridHelper(300, 30, 0x8a8178, 0x8a8178);
+grid.material.transparent = true;
+grid.material.opacity = 0.3;
+scene.add(grid);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const materials = {
+  rigid: new THREE.MeshStandardMaterial({ color: 0xc89b6d, roughness: 0.6 }),
+  tpu: new THREE.MeshStandardMaterial({ color: 0x5c6a76, roughness: 0.8 }),
+};
+const loader = new STLLoader();
+const cache = new Map();
+let mesh = null;
+let request = 0;
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(view);
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+async function geometryFor(file) {
+  if (!cache.has(file)) {
+    const g = loader.parse(await stlBuffer(file));
+    g.rotateX(-Math.PI / 2);  // STL is Z-up, three.js is Y-up
+    g.computeBoundingBox();
+    const b = g.boundingBox, c = b.getCenter(new THREE.Vector3());
+    g.translate(-c.x, -b.min.y, -c.z);  // centred, standing on the grid
+    g.computeBoundingSphere();
+    cache.set(file, g);
+  }
+  return cache.get(file);
+}
+
+async function show(item) {
+  const id = ++request;
+  status.textContent = "Decoding " + item.file + "…";
+  info.innerHTML = "";
+  let g;
+  try {
+    g = await geometryFor(item.file);
+  } catch (e) {
+    if (id === request) status.textContent = "Could not decode " + item.file + ".";
+    return;
+  }
+  if (id !== request) return;  // a newer pick won
+  if (mesh) scene.remove(mesh);
+  mesh = new THREE.Mesh(g, item.material.startsWith("TPU") ? materials.tpu : materials.rigid);
+  scene.add(mesh);
+  const s = g.boundingSphere;
+  controls.target.copy(s.center);
+  camera.position.copy(s.center).add(new THREE.Vector3(1.4, 1.0, 1.9).multiplyScalar(s.radius * 1.5));
+  controls.update();
+  status.textContent = "";
+  const p = (t) => { const el = document.createElement("span"); el.textContent = t; return el; };
+  const label = document.createElement("strong");
+  label.textContent = item.label;
+  info.append(label, document.createElement("br"),
+    p(item.material + ": " + item.hint), document.createElement("br"),
+    p(item.size_mm.join(" × ") + " mm · " + item.volume_cm3 + " cm³ · " + item.triangles + " triangles"));
+}
+
+const buttons = [];
+for (const group of manifest.groups) {
+  const h = document.createElement("h3");
+  h.textContent = group.name;
+  const row = document.createElement("div");
+  row.className = "variants";
+  for (const item of group.items) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = item.label;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", () => {
+      buttons.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      show(item);
+    });
+    buttons.push(b);
+    row.append(b);
+  }
+  document.getElementById("picker").append(h, row);
+}
+buttons[0]?.click();
+</script>
+</body>
+</html>
