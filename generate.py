@@ -21,14 +21,28 @@ GHOST_FILE = "frederick-grinder-ghost.stl"  # in build/: preview only, never a d
 
 DEFAULT_BASE = "frame-solid"  # base the preview's final form starts on (else the first BASE_VARIANTS entry)
 
-# kind -> (material, print hint)
+_SCREW_NOTE = ("PETG or ASA: PLA slowly creeps under a constant screw clamp and the screw works loose. "
+               "Use 5+ walls or 100 % infill around the hub, use a washer, and tighten only until snug.")
+_TPU_NOTE = ("TPU 95A; 85A pumps more easily but is harder to print. Print slowly (20-30 mm/s), with 2-3 walls "
+             "and minimal retraction. Food-safe TPU is available if you want it.")
+# kind -> (material, print hint, material note: 1-3 practical sentences the page shows with the part)
 PRINT_INFO = {
-    "base": ("PLA/PETG", "4 walls, 20-30 % infill, no supports, deck up"),
-    "insert": ("PLA/PETG", "spout down, no supports"),
-    "bellows-capped": ("TPU 95A", "cap on the bed, no supports; 3+ walls or 100 % infill is fine"),
-    "bellows-open": ("TPU 95A", "ring on the bed, no supports; 3+ walls or 100 % infill is fine"),
-    "2p-body": ("TPU 95A", "spout down, no supports"),
-    "cap": ("PLA/PETG", "top face down, no supports"),
+    "base": ("PLA/PETG", "4 walls, 20-30 % infill, no supports, deck up",
+             "PLA or PETG; prefer PETG or ASA if it sits near a hot espresso machine. 4 walls, 20-30 % gyroid "
+             "infill, no supports. Stick Ø12.7 mm silicone bumpers in the pad recesses."),
+    "insert-friction": ("PLA/PETG", "spout down, no supports",
+                        "PETG, or PLA+; a food-safe PETG is the best choice for bean contact. PLA-CF looks like the "
+                        "commercial parts but needs a hardened nozzle. Wash by hand only, no dishwasher."),
+    "insert-screw": ("PETG/ASA", "spout down, no supports", _SCREW_NOTE),
+    "insert-screw-reinforced": ("PETG/ASA", "spout down, no supports",
+                                _SCREW_NOTE + " The stronger choice if you clamp with the stock screw; still check "
+                                              "the screw's length and thread first."),
+    "bellows-capped": ("TPU 95A", "cap on the bed, no supports", _TPU_NOTE),
+    "bellows-open": ("TPU 95A", "ring on the bed, no supports", _TPU_NOTE),
+    "2p-body": ("TPU 95A", "spout down, no supports",
+                "TPU 95A; 98A gives a stiffer spout if the friction fit feels loose. The same slow settings as the "
+                "bellows: 20-30 mm/s, 2-3 walls, minimal retraction."),
+    "cap": ("PLA/PETG", "top face down, no supports", "PETG or PLA, 100 % infill since it's thin, top face down."),
 }
 
 
@@ -53,14 +67,28 @@ def build_parts(cfg):
                       build_base(cfg, frame=flags["frame"], window=flags["window"])))
     hopper = "Single-dose hopper"
     for name, flags in cfg.INSERT_VARIANTS.items():
-        parts.append((hopper, f"frederick-hopper-insert-{name}.stl", f"Insert: {name}", "insert",
-                      build_insert(cfg, screw_hub=flags["screw_hub"])))
+        parts.append((hopper, f"frederick-hopper-insert-{name}.stl", f"Insert: {name}", insert_kind(flags),
+                      build_insert(cfg, **flags)))
     for kind, label, build in [("bellows-capped", "Capped bellows", build_bellows),
                                ("bellows-open", "Open bellows", build_bellows_open),
                                ("2p-body", "Two-piece body", build_two_piece_body),
                                ("cap", "Cap", build_cap)]:
         parts.append((hopper, f"frederick-hopper-{kind}.stl", label, kind, build(cfg)))
     return parts
+
+
+def insert_kind(flags):
+    """PRINT_INFO key for an insert, from its INSERT_VARIANTS flags (not its name, so any variant works).
+
+    Args:
+        flags: INSERT_VARIANTS entry, build_insert() keywords: screw_hub, optional reinforced.
+
+    Returns:
+        "insert-friction", "insert-screw" or "insert-screw-reinforced".
+    """
+    if not flags["screw_hub"]:
+        return "insert-friction"
+    return "insert-screw-reinforced" if flags.get("reinforced") else "insert-screw"
 
 
 def _pretty(name):
@@ -85,7 +113,7 @@ def part_entry(mesh, file, label, kind):
         kind: Key of PRINT_INFO.
 
     Returns:
-        Dict with file, label, material, hint, size_mm, volume_cm3, triangles.
+        Dict with file, label, material, hint, material_note, size_mm, volume_cm3, triangles.
 
     Raises:
         ValueError: The mesh is not watertight or does not sit on z=0.
@@ -94,12 +122,13 @@ def part_entry(mesh, file, label, kind):
         raise ValueError(f"{file}: mesh is not watertight")
     if abs(mesh.bounds[0][2]) > 1e-3:
         raise ValueError(f"{file}: lowest point is z={mesh.bounds[0][2]:.4f}, expected 0 (on the bed)")
-    material, hint = PRINT_INFO[kind]
+    material, hint, note = PRINT_INFO[kind]
     return {
         "file": file,
         "label": label,
         "material": material,
         "hint": hint,
+        "material_note": note,
         "size_mm": [round(float(v), 1) for v in mesh.extents],
         "volume_cm3": round(float(mesh.volume) / 1000.0, 2),
         "triangles": int(len(mesh.faces)),

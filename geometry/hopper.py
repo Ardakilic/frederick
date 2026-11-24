@@ -12,6 +12,7 @@ assembled hopper frame.
 import math
 
 import numpy as np
+from manifold3d import Manifold
 from shapely.affinity import rotate
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
@@ -183,12 +184,64 @@ def _hub_plan(cfg):
     return plan.difference(Point(0, 0).buffer(cfg.SCREW_HOLE_D / 2, quad_segs=quad))
 
 
-def build_insert(cfg, *, screw_hub):
+def _strong_hub(cfg):
+    """Reinforced screw hub: STRONG_* hub and spokes, washer seat, 45° cone top, 45° spoke roofs.
+
+    The hub is a STRONG_HUB_OD cylinder whose top is a flat washer seat
+    (Ø WASHER_D + WASHER_CLEARANCE) at STRONG_HUB_H, with a 45° cone from the
+    seat edge down to the hub OD. Each spoke is STRONG_SPOKE_W wide, its sides
+    the full STRONG_HUB_H tall, with a 45° peaked roof on top (ridge
+    STRONG_SPOKE_W / 2 higher). The spokes start just outside the seat, with
+    their corners inside the hub, and end inside the spout wall. Everything
+    above the bed faces up or is vertical, so it prints without support.
+
+    Args:
+        cfg: Config namespace from load_config().
+
+    Returns:
+        manifold3d.Manifold: hub, spokes and SCREW_HOLE_D hole, z 0..STRONG_HUB_H + STRONG_SPOKE_W / 2.
+
+    Raises:
+        ValueError: The spokes block too much of the spout or miss the hub, the
+            hub is too wide, lower than its cone or its spoke ridge leaves the
+            spout, or the washer seat does not fit between the hole and the hub OD.
+    """
+    r_si = (cfg.THROAT_ID - cfg.SPOUT_CLEARANCE) / 2 - cfg.SPOUT_WALL
+    r_hub = cfg.STRONG_HUB_OD / 2
+    seat = cfg.WASHER_D + cfg.WASHER_CLEARANCE
+    h, w = cfg.STRONG_HUB_H, cfg.STRONG_SPOKE_W
+    _check([
+        (cfg.SPOKES >= 1 and 0 < cfg.SPOKES * w <= math.pi * r_si,
+         "need SPOKES >= 1 and 0 < SPOKES * STRONG_SPOKE_W <= half the spout ID circumference: the spokes would "
+         "block the bean path"),
+        (cfg.STRONG_HUB_OD < 2 * r_si - 4, "STRONG_HUB_OD must be < spout ID - 4"),
+        (cfg.SCREW_HOLE_D < seat < cfg.STRONG_HUB_OD,
+         "need SCREW_HOLE_D < WASHER_D + WASHER_CLEARANCE < STRONG_HUB_OD: the washer seat must cover the hole "
+         "and leave a cone rim"),
+        (math.hypot(seat / 2, w / 2) < r_hub,
+         "need hypot(washer seat, STRONG_SPOKE_W) < STRONG_HUB_OD: the spokes must reach into the hub outside the seat"),
+        (r_hub - seat / 2 < h and h + w / 2 <= cfg.THROAT_DEPTH,
+         "STRONG_HUB_H must be above the cone ((STRONG_HUB_OD - washer seat) / 2) and keep the spoke ridge "
+         "(STRONG_HUB_H + STRONG_SPOKE_W / 2) <= THROAT_DEPTH"),
+    ])
+    hub = revolve(Polygon([(0, 0), (r_hub, 0), (r_hub, h - r_hub + seat / 2), (seat / 2, h), (0, h)]), cfg.SEGMENTS)
+    start = (seat / 2 + math.sqrt(r_hub ** 2 - w ** 2 / 4)) / 2  # clear of the seat, corners inside the hub
+    length = r_si + cfg.SPOUT_WALL / 2  # ends inside the wall
+    section = [(-w / 2, 0), (w / 2, 0), (w / 2, h), (0, h + w / 2), (-w / 2, h)]  # (y, z), 45° roof on top
+    spoke = Manifold.hull_points([(x, y, z) for x in (start, length) for y, z in section])
+    for i in range(cfg.SPOKES):
+        hub += spoke.rotate((0, 0, 360 * i / cfg.SPOKES))
+    return hub - prism(Point(0, 0).buffer(cfg.SCREW_HOLE_D / 2, quad_segs=cfg.SEGMENTS // 4), -1, h + 1)
+
+
+def build_insert(cfg, *, screw_hub, reinforced=False):
     """Single-dose insert: drops into the throat in place of the stock hopper.
 
     Args:
         cfg: Config namespace from load_config().
         screw_hub: Add a hub on the axis for the stock central hopper screw.
+        reinforced: With screw_hub, build the reinforced hub (_strong_hub())
+            instead of the plain HUB_* one; ignored without screw_hub.
 
     Returns:
         trimesh.Trimesh in mm, spout down, z=0 on the bed.
@@ -198,7 +251,9 @@ def build_insert(cfg, *, screw_hub):
     """
     wall, _ = insert_profile(cfg)
     solid = revolve(wall, cfg.SEGMENTS)
-    if screw_hub:
+    if screw_hub and reinforced:
+        solid += _strong_hub(cfg)
+    elif screw_hub:
         solid += prism(_hub_plan(cfg), 0, cfg.HUB_H)
     return to_trimesh(solid)
 

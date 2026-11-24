@@ -1,4 +1,4 @@
-"""Tests for the single-dose hopper: insert (both variants), capped and open bellows, two-piece body, cap, kits."""
+"""Tests for the single-dose hopper: insert (every variant), capped and open bellows, two-piece body, cap, kits."""
 
 import itertools
 import math
@@ -8,6 +8,8 @@ import pytest
 import trimesh
 from manifold3d import Manifold, Mesh
 from shapely.geometry import Point, box
+from shapely.ops import unary_union
+from trimesh.transformations import translation_matrix
 
 from geometry.common import load_config, revolve
 from geometry.hopper import (bellows_open_profile, bellows_profile, build_bellows, build_bellows_open, build_cap,
@@ -16,6 +18,8 @@ from geometry.hopper import (bellows_open_profile, bellows_profile, build_bellow
 TESS = 0.02  # mm, radius error of a 128-gon at these sizes is < 0.005
 KITS = load_config().HOPPER_KITS
 FIXTURES = {"bellows-capped": "bellows", "bellows-open": "bellows_open", "2p-body": "body", "cap": "cap"}  # kit part -> fixture
+SCREW_VOLUME = 24399.07364243272  # mm³, the screw insert before screw-reinforced was added (sha256 3f94afb7... STL)
+SCREW_TRIANGLES = 14536
 # every kit with each insert variant in its insert slot (None: the kit has no insert)
 KIT_CASES = [(kit, insert) for kit, parts in KITS.items()
              for insert in (load_config().INSERT_VARIANTS if "insert" in parts else [None])]
@@ -32,29 +36,55 @@ def cfg():
 
 
 @pytest.fixture(scope="module")
-def friction(cfg):
-    """Insert without the screw hub.
+def inserts(cfg):
+    """Every INSERT_VARIANTS entry, built with its flags.
 
     Args:
         cfg: Default config fixture.
 
     Returns:
-        trimesh.Trimesh.
+        Dict variant name -> trimesh.Trimesh.
     """
-    return build_insert(cfg, screw_hub=False)
+    return {name: build_insert(cfg, **flags) for name, flags in cfg.INSERT_VARIANTS.items()}
 
 
 @pytest.fixture(scope="module")
-def screw(cfg):
-    """Insert with the screw hub.
+def friction(inserts):
+    """Insert without the screw hub.
 
     Args:
-        cfg: Default config fixture.
+        inserts: All insert variants fixture.
 
     Returns:
         trimesh.Trimesh.
     """
-    return build_insert(cfg, screw_hub=True)
+    return inserts["friction"]
+
+
+@pytest.fixture(scope="module")
+def screw(inserts):
+    """Insert with the plain screw hub.
+
+    Args:
+        inserts: All insert variants fixture.
+
+    Returns:
+        trimesh.Trimesh.
+    """
+    return inserts["screw"]
+
+
+@pytest.fixture(scope="module")
+def screw_reinforced(inserts):
+    """Insert with the reinforced screw hub.
+
+    Args:
+        inserts: All insert variants fixture.
+
+    Returns:
+        trimesh.Trimesh.
+    """
+    return inserts["screw-reinforced"]
 
 
 @pytest.fixture(scope="module")
@@ -182,7 +212,7 @@ def as_manifold(vertices, faces):
                          tri_verts=np.ascontiguousarray(faces, dtype=np.uint32)))
 
 
-@pytest.mark.parametrize("name", ["friction", "screw", "bellows", "bellows_open", "body", "cap"])
+@pytest.mark.parametrize("name", ["friction", "screw", "screw_reinforced", "bellows", "bellows_open", "body", "cap"])
 def test_printable_solid(name, request):
     """Watertight, one body, positive volume, on the bed, no overhang over 45° above the bed.
 
@@ -245,15 +275,22 @@ def kit_ml(cfg, kit):
     return ml
 
 
-@pytest.mark.parametrize("kit", KITS)
-def test_kit_capacity(cfg, kit):
-    """Every kit, assembled, holds a dose.
+@pytest.mark.parametrize("kit, insert", KIT_CASES)
+def test_kit_capacity(cfg, kit, insert, inserts):
+    """Every kit, assembled with each insert variant, holds a dose: a screw hub stays in the spout, below the
+    bean path kit_ml() counts (from THROAT_DEPTH up), so no variant takes capacity away.
 
     Args:
         cfg: Default config fixture.
         kit: HOPPER_KITS key.
+        insert: INSERT_VARIANTS key in the insert slot, or None.
+        inserts: All insert variants fixture.
     """
     assert kit_ml(cfg, kit) >= cfg.DOSE_VOLUME_ML
+    if insert:
+        extra = as_manifold(inserts[insert].vertices, inserts[insert].faces) - as_manifold(
+            inserts["friction"].vertices, inserts["friction"].faces)
+        assert extra.trim_by_plane((0, 0, 1), cfg.THROAT_DEPTH).volume() < 1e-3   # no hub above the count
 
 
 def test_two_piece_straight_cone(cfg, body):
@@ -378,7 +415,7 @@ def test_kit_fits(cfg, kit, insert, request):
     Args:
         cfg: Default config fixture.
         kit: HOPPER_KITS key.
-        insert: Fixture name of the insert variant in the insert slot, or None.
+        insert: INSERT_VARIANTS key in the insert slot, or None.
         request: pytest request, used to look up the part fixtures by name.
     """
     poses = kit_poses(cfg)[kit]
@@ -393,7 +430,7 @@ def test_kit_fits(cfg, kit, insert, request):
         Returns:
             manifold3d.Manifold.
         """
-        mesh = request.getfixturevalue(insert if part == "insert" else FIXTURES[part])
+        mesh = request.getfixturevalue("inserts")[insert] if part == "insert" else request.getfixturevalue(FIXTURES[part])
         solid = as_manifold(trimesh.transform_points(mesh.vertices, poses[part]) - (0, 0, dz), mesh.faces)
         assert solid.volume() == pytest.approx(mesh.volume, rel=1e-4)   # a rigid pose keeps it closed and outward
         return solid
@@ -416,6 +453,134 @@ def test_screw_hub(cfg, screw):
     r_si = (cfg.THROAT_ID - cfg.SPOUT_CLEARANCE) / 2 - cfg.SPOUT_WALL
     on_spoke = ((cfg.HUB_OD / 2 + r_si) / 2, cfg.SPOKE_W / 4, 200)
     assert hits_z(screw, [on_spoke], (0, 0, -1)).max() == pytest.approx(cfg.HUB_H)
+
+
+def spoke_area(mesh, z, r0, r1):
+    """Material area of the horizontal section at z between radii r0 and r1 (the spokes, inside a spout).
+
+    Args:
+        mesh: trimesh.Trimesh.
+        z: Section height (mm).
+        r0: Inner radius of the annulus measured (mm).
+        r1: Outer radius (mm).
+
+    Returns:
+        Area in mm².
+    """
+    path, _ = mesh.section(plane_origin=(0, 0, z), plane_normal=(0, 0, 1)).to_2D(
+        to_2D=translation_matrix((0, 0, -z)))
+    annulus = Point(0, 0).buffer(r1).difference(Point(0, 0).buffer(r0))
+    return unary_union(path.polygons_full).intersection(annulus).area
+
+
+def test_strong_hub(cfg, screw_reinforced):
+    """Reinforced hub: the axis ray goes through the hole, the washer seat is flat at STRONG_HUB_H with no spoke
+    over it, the rim outside it is a 45° cone, and a ray down onto a spoke lands on its 45° roof (ridge at
+    STRONG_HUB_H + STRONG_SPOKE_W / 2, on full-height sides).
+
+    Args:
+        cfg: Default config fixture.
+        screw_reinforced: Reinforced screw insert mesh fixture.
+    """
+    mesh, h = screw_reinforced, cfg.STRONG_HUB_H
+    assert len(hits_z(mesh, [(0, 0, -1)], (0, 0, 1))) == 0
+    r_seat = (cfg.WASHER_D + cfg.WASHER_CLEARANCE) / 2
+    between = math.pi / cfg.SPOKES  # angle halfway between two spokes
+
+    def down(r, a):
+        """Highest hit of a ray straight down at radius r, angle a.
+
+        Args:
+            r: Radius (mm).
+            a: Angle from +X (rad).
+
+        Returns:
+            z in mm.
+        """
+        return hits_z(mesh, [(r * math.cos(a), r * math.sin(a), 200)], (0, 0, -1)).max()
+
+    for r in np.linspace(cfg.SCREW_HOLE_D / 2 + 0.1, r_seat - 0.1, 4):
+        for a in np.linspace(0, 2 * math.pi, 7)[:-1] + 0.1:
+            assert down(r, a) == pytest.approx(h)
+    for r in np.linspace(r_seat + 0.1, cfg.STRONG_HUB_OD / 2 - 0.1, 4):
+        assert down(r, between) == pytest.approx(h - (r - r_seat), abs=TESS)
+    r_si = (cfg.THROAT_ID - cfg.SPOUT_CLEARANCE) / 2 - cfg.SPOUT_WALL
+    on_spoke = ((cfg.STRONG_HUB_OD / 2 + r_si) / 2, cfg.STRONG_SPOKE_W / 4, 200)
+    assert hits_z(mesh, [on_spoke], (0, 0, -1)).max() == pytest.approx(h + cfg.STRONG_SPOKE_W / 4)
+    assert section_radii(mesh, h + 0.01)[0] > r_seat   # above the seat level nothing reaches over the seat
+
+
+def test_strong_spokes_wider(cfg, screw, screw_reinforced):
+    """At mid hub height the reinforced spokes have more section area than the plain ones, by the width ratio.
+
+    Args:
+        cfg: Default config fixture.
+        screw: Screw insert mesh fixture.
+        screw_reinforced: Reinforced screw insert mesh fixture.
+    """
+    r_si = (cfg.THROAT_ID - cfg.SPOUT_CLEARANCE) / 2 - cfg.SPOUT_WALL
+    z = min(cfg.HUB_H, cfg.STRONG_HUB_H) / 2
+    r0, r1 = max(cfg.HUB_OD, cfg.STRONG_HUB_OD) / 2 + 0.5, r_si - 0.5
+    plain, strong = (spoke_area(m, z, r0, r1) for m in (screw, screw_reinforced))
+    assert plain == pytest.approx(cfg.SPOKES * cfg.SPOKE_W * (r1 - r0), rel=0.02)
+    assert strong == pytest.approx(cfg.SPOKES * cfg.STRONG_SPOKE_W * (r1 - r0), rel=0.02)
+    assert strong > plain
+
+
+def bending_i(poly):
+    """Second moment of area of a section about its horizontal centroid axis (bending under a vertical load).
+
+    Args:
+        poly: shapely Polygon in (y, z), no holes.
+
+    Returns:
+        I in mm⁴.
+    """
+    y, z = np.asarray(poly.exterior.coords).T
+    cross = y[:-1] * z[1:] - y[1:] * z[:-1]
+    return abs(np.sum(cross * (z[:-1] ** 2 + z[:-1] * z[1:] + z[1:] ** 2))) / 12 - poly.area * poly.centroid.y ** 2
+
+
+def test_strong_spokes_stiffer(cfg, screw, screw_reinforced):
+    """Across a spoke at mid-span (vertical section) the reinforced spoke has more area and at least twice the
+    plain spoke's bending stiffness (second moment of area); the plain one measures SPOKE_W x HUB_H.
+
+    Args:
+        cfg: Default config fixture.
+        screw: Screw insert mesh fixture.
+        screw_reinforced: Reinforced screw insert mesh fixture.
+    """
+    r_si = (cfg.THROAT_ID - cfg.SPOUT_CLEARANCE) / 2 - cfg.SPOUT_WALL
+    x = (cfg.STRONG_HUB_OD / 2 + r_si) / 2
+    to_plane = np.array([[0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, -x], [0, 0, 0, 1]], dtype=float)  # (y, z) of plane x
+    keep = box(-cfg.STRONG_SPOKE_W, -1, cfg.STRONG_SPOKE_W, cfg.THROAT_DEPTH)  # the spoke on +X, not the spout wall
+
+    def spoke(mesh):
+        """The +X spoke's cross-section at mid-span.
+
+        Args:
+            mesh: Insert mesh.
+
+        Returns:
+            shapely Polygon in (y, z).
+        """
+        path, _ = mesh.section(plane_origin=(x, 0, 0), plane_normal=(1, 0, 0)).to_2D(to_2D=to_plane)
+        return unary_union(path.polygons_full).intersection(keep)
+
+    plain, strong = spoke(screw), spoke(screw_reinforced)
+    assert bending_i(plain) == pytest.approx(cfg.SPOKE_W * cfg.HUB_H ** 3 / 12, rel=1e-6)
+    assert strong.area > plain.area
+    assert bending_i(strong) >= 2 * bending_i(plain)
+
+
+def test_screw_unchanged(screw):
+    """Adding screw-reinforced left the plain screw insert as it was (volume and triangle count).
+
+    Args:
+        screw: Screw insert mesh fixture.
+    """
+    assert screw.volume == pytest.approx(SCREW_VOLUME, rel=1e-9)
+    assert len(screw.faces) == SCREW_TRIANGLES
 
 
 def test_friction_open_near_axis(cfg, friction):
@@ -528,6 +693,13 @@ def test_folds_set_body_height(cfg):
 
 @pytest.mark.parametrize("overrides, build, match", [
     ({"HUB_OD": 31.0}, "screw", "HUB_OD"),                         # hub wider than the spout bore
+    ({"SPOKES": 11}, "strong", "block the bean path"),             # 11 x 4.5 > half of 30.4 pi
+    ({"STRONG_HUB_OD": 27.0}, "strong", "spout ID - 4"),           # hub crowds the spout bore
+    ({"WASHER_D": 12.0}, "strong", "cone rim"),                    # seat as wide as the hub
+    ({"WASHER_D": 3.5}, "strong", "cover the hole"),               # washer narrower than the hole
+    ({"STRONG_HUB_H": 18.0}, "strong", "spoke ridge"),             # ridge 20.25 above the spout top
+    ({"STRONG_HUB_H": 1.0}, "strong", "above the cone"),           # cone 1.25 tall
+    ({"STRONG_SPOKE_W": 8.0}, "strong", "reach into the hub"),     # corners outside the hub at the seat edge
     ({"FUNNEL_TOP_ID": 66.0}, "insert", "SOCKET_ID"),              # no ledge for the bellows
     ({"FUNNEL_H": 15.0}, "insert", "bottom tangent"),              # 87° bulb bottom, needs support
     ({"INSERT_WALL": 5.0}, "insert", "INSERT_WALL"),               # bulb wider than the socket
@@ -552,12 +724,14 @@ def test_invalid_params(overrides, build, match):
 
     Args:
         overrides: Config overrides passed to load_config().
-        build: Builder to call: insert, screw, bellows, open, body, cap or kits (kit_poses).
+        build: Builder to call: insert, screw, strong (screw-reinforced), bellows, open, body, cap or kits
+            (kit_poses).
         match: Regex the ValueError message must match.
     """
     cfg = load_config(overrides)
     builders = {"insert": lambda: build_insert(cfg, screw_hub=False),
                 "screw": lambda: build_insert(cfg, screw_hub=True),
+                "strong": lambda: build_insert(cfg, screw_hub=True, reinforced=True),
                 "bellows": lambda: build_bellows(cfg),
                 "open": lambda: build_bellows_open(cfg),
                 "body": lambda: build_two_piece_body(cfg),

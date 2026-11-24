@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import trimesh
 
-from generate import GHOST_FILE, build_manifest, final_form, part_entry, row_major
+from generate import GHOST_FILE, PRINT_INFO, build_manifest, final_form, insert_kind, part_entry, row_major
 from geometry.common import load_config
 from geometry.grinder import grinder_on_base_pose, throat_pose
 from geometry.hopper import kit_poses
@@ -97,18 +97,46 @@ def test_final_form_default_base_fallback():
     assert final_form(cfg)["default"]["base"] == "window"
 
 
-@pytest.mark.parametrize("kind, material, hint", [("bellows-capped", "TPU 95A", "cap on the bed"),
-                                                  ("bellows-open", "TPU 95A", "ring on the bed"),
-                                                  ("2p-body", "TPU 95A", "spout down"),
-                                                  ("cap", "PLA/PETG", "top face down")])
-def test_hopper_print_info(kind, material, hint):
-    """Each hopper part carries its own material and support-free print hint.
+@pytest.mark.parametrize("kind, material, hint, note", [
+    ("insert-friction", "PLA/PETG", "spout down", "food-safe PETG"),
+    ("insert-screw", "PETG/ASA", "spout down", "PLA slowly creeps"),
+    ("insert-screw-reinforced", "PETG/ASA", "spout down", "stronger choice"),
+    ("bellows-capped", "TPU 95A", "cap on the bed", "85A"),
+    ("bellows-open", "TPU 95A", "ring on the bed", "85A"),
+    ("2p-body", "TPU 95A", "spout down", "98A"),
+    ("cap", "PLA/PETG", "top face down", "100 % infill"),
+])
+def test_hopper_print_info(kind, material, hint, note):
+    """Each hopper part carries its own material, support-free print hint and material note.
 
     Args:
         kind: PRINT_INFO key.
         material: Expected material.
         hint: Text the print hint must contain.
+        note: Text the material note must contain.
     """
     e = part_entry(box_on_bed(), "x.stl", "X", kind)
     assert e["material"] == material
     assert hint in e["hint"] and "no supports" in e["hint"]
+    assert note in e["material_note"]
+
+
+@pytest.mark.parametrize("kind", PRINT_INFO)
+def test_material_note_length(kind):
+    """Every part's material note is 1-3 sentences.
+
+    Args:
+        kind: PRINT_INFO key.
+    """
+    note = part_entry(box_on_bed(), "x.stl", "X", kind)["material_note"]
+    assert note.endswith(".") and 1 <= note.count(". ") + 1 <= 3
+
+
+def test_insert_kind():
+    """Every INSERT_VARIANTS entry maps to a PRINT_INFO key by its flags; reinforced needs the screw hub."""
+    cfg = load_config()
+    kinds = {name: insert_kind(flags) for name, flags in cfg.INSERT_VARIANTS.items()}
+    assert kinds == {"friction": "insert-friction", "screw": "insert-screw",
+                     "screw-reinforced": "insert-screw-reinforced"}
+    assert insert_kind({"screw_hub": False, "reinforced": True}) == "insert-friction"
+    assert set(kinds.values()) <= set(PRINT_INFO)

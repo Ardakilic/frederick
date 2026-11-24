@@ -73,9 +73,18 @@ HUB_H = 6.0                # mm, hub height
 SCREW_HOLE_D = 4.4         # mm, screw clearance hole; M4 clearance, unverified
 SPOKES = 3                 # count, spokes holding the hub
 SPOKE_W = 3.0              # mm, spoke width
-INSERT_VARIANTS = {        # one STL per entry: stl/frederick-hopper-insert-<name>.stl
+# reinforced screw hub ("screw-reinforced"): the screw clamps the hub down while the collar
+# rests on the ring, so the spokes carry the clamp in bending; wider, taller spokes, a
+# washer seat and a cone top that beans slide off. Shares SCREW_HOLE_D and SPOKES.
+STRONG_SPOKE_W = 4.5       # mm, spoke width; sides STRONG_HUB_H tall, then a 45° peaked roof, ridge this / 2 higher; SPOKES x this <= half the spout ID circumference
+STRONG_HUB_H = 8.0         # mm, hub height to the washer seat, and spoke side height; + STRONG_SPOKE_W / 2 (the ridge) <= THROAT_DEPTH
+STRONG_HUB_OD = 12.0       # mm, hub outer diameter; < spout ID - 4
+WASHER_D = 9.0             # mm, washer OD, M4 DIN 125; the hub top is a flat seat of Ø WASHER_D + WASHER_CLEARANCE, then a 45° cone down to STRONG_HUB_OD
+WASHER_CLEARANCE = 0.5     # mm, diametral; washer seat Ø = WASHER_D + this
+INSERT_VARIANTS = {        # one STL per entry: stl/frederick-hopper-insert-<name>.stl; flags are build_insert() keywords
     "friction": {"screw_hub": False},
     "screw": {"screw_hub": True},
+    "screw-reinforced": {"screw_hub": True, "reinforced": True},
 }
 
 # --- Bellows (TPU 95A): capped (cap on the bed) or open (ring on the bed) -----------

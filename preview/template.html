@@ -1,120 +1,394 @@
 <!doctype html>
 <!--
-  Template for _site/index.html. tools/build_site.py fills the four
-  at-sign placeholders (and fails if one is missing). Every STL is embedded
-  below as gzip + base64 (one octet-stream script per file) and decoded in
-  the browser, so the page needs no server: it works from file://, on
-  GitHub Pages and on `make serve` alike. Only three.js comes from the
-  network (pinned jsDelivr import map). Download links are plain stl/<file>.
+  Template for _site/index.html. tools/build_site.py fills the at-sign
+  placeholders (MANIFEST, DOWNLOADS, PRINT, PARAMETERS, MESHES, REPO; it fails
+  if one is missing). Every STL is embedded below as gzip + base64 (one
+  octet-stream script per file) and decoded in the browser, so the page needs
+  no server: it works from file://, on GitHub Pages and on `make serve` alike.
+  Only three.js comes from the network (pinned jsDelivr import map). Download
+  links are plain relative stl/<file> and bundles/<zip> hrefs with `download`.
   The grinder ghost is embedded the same way but is never a download; the
   manifest's placement matrices are row-major (read with Matrix4.set).
   "Show on grinder" draws the final form: the last base clicked, the ghost
   on it and every part of the last hopper kit clicked, in the kit's throat.
+  Layout and scene follow the sibling projects' previews (ithalat's drafting
+  bench: masthead, stage + side panel, title block, triad; filtarr's "Print
+  these" panel). The picker and the print panel work without WebGL.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>frederick - Lelit Fred accessories</title>
 <meta name="description" content="Parametric, 3D-printable angled base and single-dose hopper for the Lelit Fred PL043MMI grinder.">
 <meta name="color-scheme" content="light dark">
 <style>
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+/* Layout: one-screen drafting bench. The 3D stage takes the room; a drawing-sheet side
+   panel carries the picker, the "Print these" set, every download and the parameters.
+   At phone width the panel stacks under the stage, the page scrolls and a sticky bar
+   keeps the current bundle one tap away. */
 :root {
-  --bg: #f6f4f1; --surface: #ffffff; --text: #1f1c19; --muted: #6b645c;
-  --line: #e2ddd6; --accent: #8a5a2b; --accent-text: #ffffff; --viewer: #ece8e2;
+  --paper: #edf2f3;
+  --sheet: #f8fafb;
+  --ink: #12222a;
+  --ink-soft: #4b5f69;
+  --rule: #cad5d9;
+  --rule-strong: #9db0b7;
+  --accent: #0a676b;
+  --accent-ink: #f0fbfa;
+  --accent-wash: #d4e9e7;
+  --focus: #0a676b;
+  /* 3D scene, read by the viewer's script */
+  --scene-bg: #e2e9eb;
+  --scene-grid: #cdd8dc;
+  --scene-grid-major: #a9bcc2;
+  --scene-sky: #f5f9ff;
+  --scene-ground: #7d8b92;
+  --scene-shadow: 0.22;
+  --scene-fill: 0.7;
+  --scene-ghost: #7f8b91;
+  --axis-x: #b5473b;
+  --axis-y: #3d7b40;
+  --axis-z: #2f5ea6;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-text: "IBM Plex Sans", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --fs-xs: 0.6875rem;
+  --fs-sm: 0.78125rem;
+  --fs-md: 0.875rem;
+  --fs-lg: 1.0625rem;
+  --fs-xl: 1.75rem;
+  --radius: 4px;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161412; --surface: #1f1c19; --text: #ece8e2; --muted: #a39b91;
-    --line: #34302b; --accent: #d49a5f; --accent-text: #161412; --viewer: #12100e;
+  :root:not([data-theme="light"]) {
+    --paper: #0a1317; --sheet: #0e1a1f; --ink: #d7e4e8; --ink-soft: #8ba1a9;
+    --rule: #1d2f36; --rule-strong: #2f4952; --accent: #57dcc9; --accent-ink: #04211e;
+    --accent-wash: #113230; --focus: #57dcc9;
+    --scene-bg: #0b161b; --scene-grid: #13232a; --scene-grid-major: #1f3a42;
+    --scene-sky: #bcd6e8; --scene-ground: #0a1216; --scene-shadow: 0.5; --scene-fill: 1.3; --scene-ghost: #aab4b9;
+    --axis-x: #e27b6d; --axis-y: #7cc47f; --axis-z: #76a8ef;
+    color-scheme: dark;
   }
 }
-* { box-sizing: border-box; }
+:root[data-theme="dark"] {
+  --paper: #0a1317; --sheet: #0e1a1f; --ink: #d7e4e8; --ink-soft: #8ba1a9;
+  --rule: #1d2f36; --rule-strong: #2f4952; --accent: #57dcc9; --accent-ink: #04211e;
+  --accent-wash: #113230; --focus: #57dcc9;
+  --scene-bg: #0b161b; --scene-grid: #13232a; --scene-grid-major: #1f3a42;
+  --scene-sky: #bcd6e8; --scene-ground: #0a1216; --scene-shadow: 0.5; --scene-fill: 1.3; --scene-ghost: #aab4b9;
+  --axis-x: #e27b6d; --axis-y: #7cc47f; --axis-z: #76a8ef;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { height: 100%; }
 body {
-  margin: 0; background: var(--bg); color: var(--text);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  height: 100%; margin: 0;
+  background: var(--paper); color: var(--ink);
+  font: 400 var(--fs-md)/1.45 var(--font-text);
+  -webkit-font-smoothing: antialiased;
 }
-main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
-h1 { margin: 0; font-size: 1.8rem; letter-spacing: -0.01em; }
-h2 { margin: 40px 0 12px; font-size: 1.25rem; }
-h3 { margin: 20px 0 8px; font-size: 1rem; }
-p { margin: 0 0 12px; }
-a { color: var(--accent); }
-code { font: 0.85em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.lede { color: var(--muted); margin: 4px 0 24px; }
-.layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 300px; }
-@media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } }
-#view {
-  position: relative; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden;
-  background: var(--viewer); border: 1px solid var(--line);
+[hidden] { display: none !important; }
+button, input { font: inherit; color: inherit; }
+code, pre { font-family: var(--font-mono); font-size: 0.92em; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--focus); outline-offset: 2px;
 }
-#view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.gh-mark { width: 1em; height: 1em; flex: none; fill: currentColor; transform: translateY(0.12em); }
+
+.app {
+  height: 100%;
+  display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 14px;
+}
+
+/* ---------- masthead ---------- */
+.masthead {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 4px 20px; border-bottom: 1px solid var(--rule); padding-bottom: 8px;
+}
+.brand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; min-width: 0; }
+.wordmark {
+  margin: 0; font: 800 var(--fs-xl)/1 var(--font-display);
+  font-variation-settings: "opsz" 96; letter-spacing: -0.02em;
+}
+.wordmark i { font-style: normal; color: var(--accent); }
+.tagline { margin: 0; color: var(--ink-soft); text-wrap: balance; }
+.mast-side { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; min-width: 0; }
+.sheet-ref {
+  margin: 0; font: 500 var(--fs-xs)/1.3 var(--font-mono);
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft);
+}
+.src-link {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 8px;
+  border: 1px solid var(--rule-strong); border-radius: var(--radius);
+  font: 500 var(--fs-xs)/1.3 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--accent); text-decoration: none; white-space: nowrap;
+}
+.src-link:hover { border-color: var(--accent); background: var(--accent-wash); }
+
+/* ---------- bench ---------- */
+.bench { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 12px; }
+.stage {
+  position: relative; min-height: 0; min-width: 0; overflow: hidden;
+  border: 1px solid var(--rule); border-radius: var(--radius); background: var(--scene-bg);
+}
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+.stage canvas:focus-visible { outline: 2px solid var(--focus); outline-offset: -3px; }
+.stage-bar {
+  position: absolute; top: 10px; left: 10px; right: 10px;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px;
+  pointer-events: none;
+}
+.stage-bar > * { pointer-events: auto; }
+.glass-chip {
+  background: color-mix(in srgb, var(--sheet) 86%, transparent);
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+
+/* segmented controls: toggle buttons with aria-pressed */
+.seg { display: inline-flex; flex-wrap: wrap; padding: 2px; gap: 2px; }
+.seg button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 5px 10px; border: 0; border-radius: 3px; background: transparent;
+  font: 500 var(--fs-sm)/1.2 var(--font-text); color: var(--ink-soft);
+  cursor: pointer; white-space: nowrap;
+}
+.seg button:hover { color: var(--ink); background: var(--accent-wash); }
+.seg button.slot { color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+.seg button:focus-visible { outline-offset: 1px; }
+.toggle-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: var(--fs-sm); color: var(--ink-soft); cursor: pointer; }
+
+/* title block, bottom-left of the stage: a drawing-sheet corner */
+.titleblock {
+  position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 100px);
+  display: grid; grid-template-columns: auto auto;
+  font: 500 var(--fs-xs)/1.25 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase;
+  font-variant-numeric: tabular-nums; pointer-events: none; overflow: hidden;
+}
+.titleblock span { padding: 3px 8px; border-top: 1px solid var(--rule); }
+.titleblock span:nth-child(-n+2) { border-top: 0; }
+.titleblock span:nth-child(odd) { color: var(--ink-soft); border-right: 1px solid var(--rule); }
+.triad { position: absolute; right: 8px; bottom: 8px; width: 68px; height: 68px; pointer-events: none; }
+.triad text { font: 600 10px var(--font-mono); }
+.hint { position: absolute; right: 84px; bottom: 12px; margin: 0; font-size: var(--fs-xs); color: var(--ink-soft); pointer-events: none; }
 #status {
-  position: absolute; inset: auto 12px 12px; margin: 0; color: var(--muted);
-  font-size: 0.875rem; pointer-events: none;
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(40ch, calc(100% - 32px)); margin: 0; text-align: center;
+  font-size: var(--fs-sm); color: var(--ink-soft); pointer-events: none;
 }
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px 16px 16px; }
-.variants { display: flex; flex-wrap: wrap; gap: 8px; }
-.variants button {
-  font: inherit; font-size: 0.875rem; padding: 6px 12px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--line); background: transparent; color: var(--text);
+
+/* ---------- side panel ---------- */
+.panel {
+  min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius);
+  scrollbar-width: thin;
 }
-.variants button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.variants button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-#info { margin-top: 16px; font-size: 0.875rem; color: var(--muted); }
-.toggle { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 0.875rem; cursor: pointer; }
-.toggle input { accent-color: var(--accent); }
-#ghost-note { margin: 4px 0 0; font-size: 0.8rem; color: var(--muted); }
-#final-caption { margin: 8px 0 0; font-size: 0.875rem; }
-#info strong { color: var(--text); }
-ul.downloads { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-ul.downloads li {
-  display: grid; gap: 2px; padding: 12px 16px; border-radius: 10px;
-  background: var(--surface); border: 1px solid var(--line);
+.block { padding: 14px 16px 16px; border-top: 1px solid var(--rule); display: grid; gap: 10px; }
+.block:first-child { border-top: 0; }
+.block h2 {
+  margin: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font: 600 var(--fs-lg)/1.2 var(--font-display); letter-spacing: -0.005em;
 }
-ul.downloads a { font-weight: 600; }
-ul.downloads code, ul.downloads .meta { color: var(--muted); font-size: 0.8rem; }
-table { border-collapse: collapse; width: 100%; max-width: 560px; }
-th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); font-weight: normal; }
-td { font-variant-numeric: tabular-nums; white-space: nowrap; }
-th { color: var(--muted); }
+.block h2 small { font: 500 var(--fs-xs)/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+.label { margin: 0; font: 600 var(--fs-xs)/1.2 var(--font-text); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); }
+h3.label { margin-top: 4px; }
+.field { display: grid; gap: 6px; }
+#picker { display: grid; gap: 10px; }
+.panel .seg { display: flex; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--paper); }
+.panel .seg button { flex: 1 1 0; min-width: 0; white-space: normal; text-align: center; }
+.fine { margin: 0; font-size: var(--fs-xs); color: var(--ink-soft); }
+#final-caption { margin: 0; font-size: var(--fs-sm); font-weight: 500; }
+
+/* switches (checkbox, role=switch) */
+.switch { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); font-weight: 500; cursor: pointer; }
+.switch input, .toggle-chip input {
+  appearance: none; -webkit-appearance: none; flex: none;
+  width: 28px; height: 16px; margin: 0; border-radius: 8px;
+  background: var(--rule-strong); position: relative; cursor: pointer; transition: background-color 0.15s;
+}
+.switch input::after, .toggle-chip input::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--sheet); transition: transform 0.15s;
+}
+.switch input:checked, .toggle-chip input:checked { background: var(--accent); }
+.switch input:checked::after, .toggle-chip input:checked::after { transform: translateX(12px); background: var(--accent-ink); }
+
+/* downloads: the big bundle button, then one row per file */
+.dl-for b { font-weight: 600; color: var(--ink); }
+.print-set { display: grid; gap: 10px; }
+.dl-all {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 2px 8px;
+  padding: 10px 12px; border: 1px solid var(--accent); border-radius: var(--radius);
+  background: var(--accent); color: var(--accent-ink); text-decoration: none;
+  font: 600 var(--fs-md)/1.2 var(--font-text); text-align: center;
+}
+.dl-all:hover { background: color-mix(in srgb, var(--accent) 84%, var(--ink)); }
+.dl-sum { font: 500 var(--fs-xs)/1.2 var(--font-mono); font-variant-numeric: tabular-nums; }
+.dl-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.dl-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 0; }
+.dl-row + .dl-row { border-top: 1px solid var(--rule); }
+.dl-what { display: grid; gap: 1px; min-width: 0; }
+.dl-name { font-weight: 600; font-size: var(--fs-sm); }
+.dl-mat { font-size: var(--fs-xs); color: var(--ink-soft); }
+.dl-mat b { font-weight: 600; color: var(--ink); }
+.dl-note { font-size: var(--fs-xs); color: var(--ink); border-left: 2px solid var(--accent); padding-left: 6px; margin: 2px 0; }
+.dl-file, .dl-meta { font-size: var(--fs-xs); color: var(--ink-soft); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.dl-file code { color: var(--ink); }
+.dl-file .gh { white-space: nowrap; }
+.dl-meta { font-family: var(--font-mono); }
+.dl-get {
+  padding: 4px 10px; border: 1px solid var(--rule-strong); border-radius: 3px;
+  font-size: var(--fs-sm); font-weight: 500; color: var(--accent); text-decoration: none; white-space: nowrap;
+}
+.dl-get:hover { border-color: var(--accent); background: var(--accent-wash); }
+.mini-btn {
+  justify-self: start; display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 4px 10px; border: 1px solid var(--rule-strong); border-radius: 3px;
+  font-size: var(--fs-sm); color: var(--accent); text-decoration: none;
+}
+.mini-btn:hover { border-color: var(--accent); background: var(--accent-wash); }
+
+/* tables */
+table { border-collapse: collapse; width: 100%; }
+.kv th, .kv td { padding: 6px 0; border-top: 1px solid var(--rule); vertical-align: baseline; text-align: left; }
+.kv tr:first-child th, .kv tr:first-child td { border-top: 0; }
+.kv th { width: 55%; font-weight: 400; color: var(--ink-soft); padding-right: 12px; font-size: var(--fs-sm); line-height: 1.35; }
+.kv td { font: 400 var(--fs-xs)/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
 pre {
-  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
-  padding: 12px 16px; overflow-x: auto;
+  margin: 0; padding: 10px 12px; overflow-x: auto; font-size: var(--fs-xs);
+  background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius);
+}
+
+/* phone: sticky bar with the current bundle */
+.printbar { display: none; }
+@media (max-width: 760px) {
+  body { height: auto; min-height: 100%; }
+  .app { height: auto; grid-template-rows: auto auto auto; padding-bottom: 0; }
+  .bench { grid-template-columns: minmax(0, 1fr); }
+  .stage { height: 58vh; height: 58svh; min-height: 320px; }
+  .panel { overflow: visible; }
+  .wordmark { font-size: 1.5rem; }
+  .hint, .titleblock .wide, .sheet-ref { display: none; }
+  .stage-bar { top: 8px; left: 8px; right: 8px; }
+  .seg button { padding: 6px 8px; }
+  #print { scroll-margin-top: 8px; }
+  .printbar {
+    display: flex; position: sticky; bottom: 0; z-index: 5; align-items: center; gap: 10px;
+    margin: 0 calc(-1 * max(16px, env(safe-area-inset-left, 0px))) 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: color-mix(in srgb, var(--sheet) 92%, transparent);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-top: 1px solid var(--rule);
+  }
+  .printbar .pb-what { display: grid; min-width: 0; flex: 1; }
+  .printbar b { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .printbar .dl-all { padding: 9px 12px; white-space: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 </style>
 </head>
 <body>
-<main>
-  <h1>frederick</h1>
-  <p class="lede">Parametric, 3D-printable accessories for the Lelit Fred (PL043MMI) grinder: an angled base and a single-dose hopper.</p>
-
-  <div class="layout">
-    <div id="view"><p id="status">The 3D preview needs JavaScript and WebGL; the downloads below work without it.</p></div>
-    <div class="panel">
-      <div id="picker"></div>
-      <label class="toggle"><input type="checkbox" id="on-grinder"> Show on grinder</label>
-      <p id="final-caption" hidden></p>
-      <p id="ghost-note" hidden>Approximate grinder for context — not a measured model.</p>
-      <p id="info"></p>
+<div class="app" id="app">
+  <header class="masthead">
+    <div class="brand">
+      <h1 class="wordmark">frederick<i>.</i></h1>
+      <p class="tagline">Parametric, 3D-printable angled base and single-dose hopper for the Lelit Fred (PL043MMI) grinder</p>
     </div>
-  </div>
+    <div class="mast-side">
+      <p class="sheet-ref">mm · print as loaded · no supports</p>
+      <a class="src-link" href="@REPO@" target="_blank" rel="noopener noreferrer"><svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>Source on GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
 
-  <h2>Download the STLs</h2>
-  <p>All parts are in millimetres, already in print orientation. The grinder figures behind them are estimates: measure yours and rebuild if they differ.</p>
-  @DOWNLOADS@
+  <main class="bench">
+    <section class="stage" id="stage" aria-label="3D preview of the selected part">
+      <div class="stage-bar">
+        <div class="seg glass-chip" role="group" aria-label="Camera view">
+          <button type="button" data-view="hero" aria-pressed="true">3/4</button>
+          <button type="button" data-view="front" aria-pressed="false">Front</button>
+          <button type="button" data-view="side" aria-pressed="false">Side</button>
+          <button type="button" data-view="top" aria-pressed="false">Top</button>
+        </div>
+        <label class="toggle-chip glass-chip" for="autorotate"><input type="checkbox" id="autorotate" role="switch"> Auto-rotate</label>
+      </div>
+      <div class="titleblock glass-chip" aria-hidden="true">
+        <span>Part</span><span id="tb-part">-</span>
+        <span>Material</span><span id="tb-mat">-</span>
+        <span>Size</span><span id="tb-size">-</span>
+        <span class="wide">Base</span><span class="wide" id="tb-base">-</span>
+        <span class="wide">Hopper</span><span class="wide" id="tb-kit">-</span>
+        <span class="wide">View</span><span class="wide" id="tb-view">3/4</span>
+      </div>
+      <svg class="triad" viewBox="-34 -34 68 68" aria-hidden="true">
+        <line id="ax-x" x1="0" y1="0" x2="20" y2="0" stroke="var(--axis-x)" stroke-width="2" stroke-linecap="round"></line>
+        <line id="ax-y" x1="0" y1="0" x2="0" y2="-20" stroke="var(--axis-y)" stroke-width="2" stroke-linecap="round"></line>
+        <line id="ax-z" x1="0" y1="0" x2="-14" y2="14" stroke="var(--axis-z)" stroke-width="2" stroke-linecap="round"></line>
+        <text id="lb-x" x="24" y="3" fill="var(--axis-x)">X</text>
+        <text id="lb-y" x="-3" y="-24" fill="var(--axis-y)">Y</text>
+        <text id="lb-z" x="-22" y="22" fill="var(--axis-z)">Z</text>
+      </svg>
+      <p class="hint">Drag to orbit · right-drag to pan · scroll to zoom</p>
+      <p id="status" role="status" aria-live="polite">The 3D preview needs JavaScript and WebGL; the downloads beside it work without it.</p>
+    </section>
 
-  <h2>Parameters used</h2>
-  <table><tbody>
-  @PARAMETERS@
-  </tbody></table>
+    <aside class="panel" id="panel" aria-label="Parts, downloads and parameters">
+      <section class="block" aria-labelledby="h-configure">
+        <h2 id="h-configure">Configure</h2>
+        <div class="field">
+          <label class="switch" for="on-grinder"><input type="checkbox" id="on-grinder" role="switch"> Show on grinder</label>
+          <p id="final-caption" hidden></p>
+          <p id="ghost-note" class="fine" hidden>Approximate grinder for context — not a measured model.</p>
+        </div>
+        <div id="picker"></div>
+      </section>
 
-  <h2>Customise</h2>
-  <p>Every dimension lives in <code>config.py</code>. Edit it, or override values for one build, then rebuild (Docker only, nothing to install):</p>
-  <pre><code>make generate GEN_ARGS="--angle 12"
+      <section class="block" id="print" aria-labelledby="h-print">
+        <h2 id="h-print">Print these</h2>
+        @PRINT@
+        <p class="fine" id="print-also" hidden>Also in this view: <a id="print-also-link" download></a></p>
+      </section>
+
+      <section class="block" id="downloads" aria-labelledby="h-all">
+        <h2 id="h-all">All downloads</h2>
+        <p class="fine">Every part in millimetres, already in print orientation. The grinder figures behind them are estimates: measure yours and rebuild if they differ.</p>
+        @DOWNLOADS@
+      </section>
+
+      <section class="block" id="parameters" aria-labelledby="h-params">
+        <h2 id="h-params">Parameters used</h2>
+        <table class="kv"><tbody>
+        @PARAMETERS@
+        </tbody></table>
+        <a class="mini-btn" href="@REPO@/blob/main/config.py" target="_blank" rel="noopener noreferrer"><svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>Edit the parameters (config.py) <span aria-hidden="true">↗</span></a>
+        <p class="fine">Or override values for one build, then rebuild (Docker only, nothing to install):</p>
+        <pre><code>make generate GEN_ARGS="--angle 12"
 make generate GEN_ARGS="--set FOOT_D=22.0 --set THROAT_ID=34.2"
-make site     # then open _site/index.html (or: make serve)</code></pre>
-</main>
+make site     # then open _site/index.html</code></pre>
+      </section>
+
+      <footer class="block">
+        <p class="fine">GPL-3.0 · <a href="@REPO@" target="_blank" rel="noopener noreferrer">github.com/Ardakilic/frederick</a> · grinder figures are estimates, measure yours before printing.</p>
+      </footer>
+    </aside>
+  </main>
+
+  <div class="printbar" id="printbar" hidden>
+    <div class="pb-what"><span class="label">Print these</span><b id="pb-sel"></b></div>
+    <a class="dl-get" href="#print">Files</a>
+    <a class="dl-all" id="pb-zip" download>Download .zip</a>
+  </div>
+</div>
 
 <script id="manifest" type="application/json">@MANIFEST@</script>
 @MESHES@
@@ -127,195 +401,392 @@ make site     # then open _site/index.html (or: make serve)</code></pre>
 }
 </script>
 <script type="module">
-const manifest = JSON.parse(document.getElementById("manifest").textContent);
-const view = document.getElementById("view");
-const status = document.getElementById("status");
-const info = document.getElementById("info");
-const onGrinder = document.getElementById("on-grinder");
-const ghostNote = document.getElementById("ghost-note");
-const caption = document.getElementById("final-caption");
+const $ = (id) => document.getElementById(id);
+const manifest = JSON.parse($("manifest").textContent);
+const stage = $("stage");
+const status = $("status");
+const onGrinder = $("on-grinder");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
-// Dynamic imports: a failed CDN load (offline) lands in catch instead of killing the script.
-let THREE, STLLoader, OrbitControls;
-try {
-  [THREE, { STLLoader }, { OrbitControls }] = await Promise.all([
-    import("three"),
-    import("three/addons/loaders/STLLoader.js"),
-    import("three/addons/controls/OrbitControls.js"),
-  ]);
-} catch (e) {
-  status.textContent = "The 3D viewer could not load three.js from cdn.jsdelivr.net (offline?). " +
-    "Reload when online; the downloads below work without it.";
-  throw e;
-}
-if (typeof DecompressionStream === "undefined") {
-  status.textContent = "This browser is too old for the 3D preview (it needs DecompressionStream). " +
-    "The downloads below still work.";
-  throw new Error("DecompressionStream unsupported");
-}
-
-// STL bytes are embedded in the page (gzip + base64), so nothing is fetched: works from file://.
-async function stlBuffer(file) {
-  const b64 = document.getElementById("mesh-" + file.replace(/\.stl$/, "")).textContent.trim();
-  const gz = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  return new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
-}
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-view.prepend(renderer.domElement);
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(35, 1, 1, 5000);
-const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-sun.position.set(1, 2, 3);
-camera.add(sun);  // light follows the camera, so every side gets lit
-scene.add(camera, new THREE.HemisphereLight(0xffffff, 0x50463c, 1.2));
-const grid = new THREE.GridHelper(300, 30, 0x8a8178, 0x8a8178);
-grid.material.transparent = true;
-grid.material.opacity = 0.3;
-scene.add(grid);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-const root = new THREE.Group();
-root.rotation.x = -Math.PI / 2;  // STLs and placements are Z-up, three.js is Y-up
-scene.add(root);
-
-const materials = {
-  rigid: new THREE.MeshStandardMaterial({ color: 0xc89b6d, roughness: 0.6 }),
-  tpu: new THREE.MeshStandardMaterial({ color: 0x5c6a76, roughness: 0.8 }),
-};
-// The part last clicked, lit a little, so it stands out in the final form without changing colour.
-const lit = (m) => Object.assign(m.clone(), { emissive: new THREE.Color(0xd49a5f), emissiveIntensity: 0.25 });
-const highlight = { rigid: lit(materials.rigid), tpu: lit(materials.tpu) };
-// Translucent without depth writes, so whatever is inside stays visible.
-const ghostMaterial = Object.assign(new THREE.MeshStandardMaterial({ color: 0xa3a6a9, roughness: 0.5 }),
-  { transparent: true, opacity: 0.25, depthWrite: false });
-const kind = (item) => (item.material.startsWith("TPU") ? "tpu" : "rigid");
 const byFile = new Map(manifest.groups.flatMap((g) => g.items).map((it) => [it.file, it]));
 const kits = new Map(manifest.kits.map((k) => [k.key, k]));
 const baseName = new Map(Object.entries(manifest.bases).map(([name, file]) => [file, name]));
-// The manifest's matrices are row-major, which is what Matrix4.set() takes (fromArray() would transpose them).
-const rowMajor = (m) => new THREE.Matrix4().set(...m);
-const loader = new STLLoader();
-const cache = new Map();
+const kind = (item) => (item.material.startsWith("TPU") ? "tpu" : "rigid");
 // The final form's slots: the last base and hopper kit (with its insert) clicked, and the part last clicked.
 const d = manifest.default;
 const state = { base: manifest.bases[d.base], kit: d.kit, insert: d.insert, last: manifest.bases[d.base] };
-let request = 0;
+let viewer = null;   // the 3D view, once three.js is up; the picker and the print panel work without it
+let pressed = null;  // the button last clicked
 
-function resize() {
-  const w = view.clientWidth, h = view.clientHeight;
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-new ResizeObserver(resize).observe(view);
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
-
-// Each STL is decoded once, in its own (print or world) frame; meshes are placed by matrix.
-function geometryFor(file) {
-  if (!cache.has(file)) cache.set(file, stlBuffer(file).then((b) => loader.parse(b)));
-  return cache.get(file);
-}
-
-function place(geometry, matrix, material) {
-  const m = new THREE.Mesh(geometry, material);
-  m.matrixAutoUpdate = false;
-  m.matrix.copy(matrix);
-  root.add(m);
-}
-
-// Centre everything shown on the grid, standing on it, and fit the camera to it.
-function frame() {
-  root.position.set(0, 0, 0);
-  root.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(root), c = box.getCenter(new THREE.Vector3());
-  root.position.set(-c.x, -box.min.y, -c.z);
-  const s = box.translate(root.position).getBoundingSphere(new THREE.Sphere());
-  controls.target.copy(s.center);
-  camera.position.copy(s.center).add(new THREE.Vector3(1.4, 1.0, 1.9).multiplyScalar(s.radius * 1.5));
-  controls.update();
-}
+const say = (text) => { status.textContent = text; status.hidden = !text; };
+const hasInsert = () => Boolean(kits.get(state.kit).inserts[state.insert]);
+const kitParts = () => {
+  const kit = kits.get(state.kit);
+  return hasInsert() ? [kit.inserts[state.insert], ...kit.files] : kit.files;
+};
 
 // Off: the part last clicked, as printed. On: the final form, [file, row-major placement or null (as printed)].
 function scenePlan() {
   if (!onGrinder.checked) return [[state.last, null]];
-  const kit = kits.get(state.kit), insert = kit.inserts[state.insert];
-  const parts = insert ? [insert, ...kit.files] : kit.files;
-  return [[state.base, null], ...parts.map((f) => [f, kit.placements[f]]),
+  const kit = kits.get(state.kit);
+  return [[state.base, null], ...kitParts().map((f) => [f, kit.placements[f]]),
           [manifest.ghost.file, manifest.ghost.placement]];
 }
 
-async function show() {
-  const id = ++request;
-  const final = onGrinder.checked;
-  const plan = scenePlan();
-  const item = byFile.get(state.last);
-  ghostNote.hidden = caption.hidden = !final;
-  status.textContent = "Decoding " + (final ? "the final form" : item.file) + "…";
-  info.innerHTML = "";
-  let geoms;
-  try {
-    geoms = await Promise.all(plan.map(([f]) => geometryFor(f)));
-  } catch (e) {
-    if (id === request) status.textContent = "Could not decode the meshes.";
-    return;
+// Every control follows the slots; the 3D view redraws if it is up.
+function update() {
+  const final = onGrinder.checked, item = byFile.get(state.last), parts = kitParts();
+  const insert = hasInsert() ? " (" + state.insert + " insert)" : "";
+  for (const b of buttons) {
+    b.setAttribute("aria-pressed", String(b === pressed));
+    b.classList.toggle("slot", b.dataset.kit ? b.dataset.kit === state.kit && parts.includes(b.dataset.file)
+                                             : b.dataset.file === state.base);
   }
-  if (id !== request) return;  // a newer pick won
-  root.clear();
-  plan.forEach(([f, m], i) => {
-    const material = f === manifest.ghost.file ? ghostMaterial
-      : (final && f === state.last ? highlight : materials)[kind(byFile.get(f))];
-    place(geoms[i], m ? rowMajor(m) : new THREE.Matrix4(), material);
-  });
-  frame();
-  status.textContent = "";
-  if (final) {
-    const insert = kits.get(state.kit).inserts[state.insert] ? " (" + state.insert + " insert)" : "";
-    caption.textContent = "Final form: " + baseName.get(state.base) + " base · " + state.kit + " hopper" + insert;
-  }
-  const p = (t) => { const el = document.createElement("span"); el.textContent = t; return el; };
-  const label = document.createElement("strong");
-  label.textContent = item.label;
-  info.append(label, document.createElement("br"),
-    p(item.material + ": " + item.hint), document.createElement("br"),
-    p(item.size_mm.join(" × ") + " mm · " + item.volume_cm3 + " cm³ · " + item.triangles + " triangles"));
+  // "Print these": the set of the slot last clicked (a base, or the kit with its insert)
+  const baseSet = document.querySelector(`.print-set[data-base="${CSS.escape(baseName.get(state.base))}"]`);
+  const kitSet = document.querySelector(
+    `.print-set[data-kit="${CSS.escape(state.kit)}"][data-insert="${hasInsert() ? CSS.escape(state.insert) : ""}"]`);
+  const set = baseName.has(state.last) ? baseSet : kitSet, other = set === baseSet ? kitSet : baseSet;
+  for (const s of document.querySelectorAll(".print-set")) s.hidden = s !== set;
+  const zip = (s) => s.querySelector(".dl-all").getAttribute("href");
+  $("print-also").hidden = !final;
+  $("print-also-link").href = zip(other);
+  $("print-also-link").textContent = other.dataset.title + " (.zip)";
+  $("pb-sel").textContent = set.dataset.title;
+  $("pb-zip").href = zip(set);
+  $("printbar").hidden = false;
+  $("ghost-note").hidden = $("final-caption").hidden = !final;
+  $("final-caption").textContent = "Final form: " + baseName.get(state.base) + " base · " + state.kit + " hopper" + insert;
+  $("tb-part").textContent = item.label;
+  $("tb-mat").textContent = item.material;
+  $("tb-size").textContent = item.size_mm.join(" × ") + " mm";
+  $("tb-base").textContent = byFile.get(state.base).label;
+  $("tb-kit").textContent = state.kit + insert;
+  viewer?.show();
 }
 
-// One row of buttons; entries are [file, pick], pick() fills the slot the button belongs to.
+// One labelled group of toggle buttons; entries are [file, pick], pick() fills the slot the button belongs to.
 const buttons = [];
-function section(title, entries) {
-  const h = document.createElement("h3");
-  h.textContent = title;
+function section(title, kit, entries) {
+  const field = document.createElement("div");
+  field.className = "field";
+  const label = document.createElement("span");
+  label.className = "label";
+  label.id = "lbl-" + (kit || "base");
+  label.textContent = title;
   const row = document.createElement("div");
-  row.className = "variants";
+  row.className = "seg";
+  row.setAttribute("role", "group");
+  row.setAttribute("aria-labelledby", label.id);
   for (const [file, pick] of entries) {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = byFile.get(file).label;
     b.dataset.file = file;
+    b.dataset.kit = kit;
     b.setAttribute("aria-pressed", "false");
-    b.addEventListener("click", () => {
-      buttons.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-      pick();
-      state.last = file;
-      show();
-    });
+    b.addEventListener("click", () => { pressed = b; pick(); state.last = file; update(); });
     buttons.push(b);
     row.append(b);
   }
-  document.getElementById("picker").append(h, row);
+  field.append(label, row);
+  $("picker").append(field);
 }
-section("Angled base", Object.values(manifest.bases).map((f) => [f, () => { state.base = f; }]));
+section("Angled base", "", Object.values(manifest.bases).map((f) => [f, () => { state.base = f; }]));
 // Hopper parts grouped by kit: a shared STL (insert, cap) gets a button in every kit that uses it.
 for (const kit of manifest.kits) {
-  section("Hopper: " + kit.key + " kit", [
+  section("Hopper: " + kit.key + " kit", kit.key, [
     ...Object.entries(kit.inserts).map(([name, f]) => [f, () => { state.kit = kit.key; state.insert = name; }]),
     ...kit.files.map((f) => [f, () => { state.kit = kit.key; }]),
   ]);
 }
-onGrinder.addEventListener("change", show);
+onGrinder.addEventListener("change", update);
 buttons.find((b) => b.dataset.file === state.base)?.click();  // start on the default base
+
+function hasWebGL() {
+  try {
+    const c = document.createElement("canvas");
+    return Boolean(window.WebGLRenderingContext && (c.getContext("webgl2") || c.getContext("webgl")));
+  } catch (e) { return false; }
+}
+// Without the 3D view its overlays do nothing: hide them and say why.
+function fail(text) {
+  for (const el of stage.querySelectorAll(".stage-bar, .triad, .hint, .titleblock")) el.setAttribute("hidden", "");
+  say(text);
+}
+
+if (!hasWebGL()) {
+  fail("The 3D preview needs WebGL, which this browser has turned off. The parts, downloads and parameters beside it still work.");
+} else if (typeof DecompressionStream === "undefined") {
+  fail("This browser is too old for the 3D preview (it needs DecompressionStream). The downloads still work.");
+} else {
+  say("Loading three.js…");
+  try {
+    viewer = await startViewer();
+    viewer.show();
+  } catch (e) {
+    console.error(e);
+    fail(e.message);
+  }
+}
+
+async function startViewer() {
+  // Dynamic imports: a failed CDN load (offline) lands in catch instead of killing the script.
+  let THREE, STLLoader, OrbitControls, RoomEnvironment, toCreasedNormals;
+  try {
+    [THREE, { STLLoader }, { OrbitControls }, { RoomEnvironment }, { toCreasedNormals }] = await Promise.all([
+      import("three"),
+      import("three/addons/loaders/STLLoader.js"),
+      import("three/addons/controls/OrbitControls.js"),
+      import("three/addons/environments/RoomEnvironment.js"),
+      import("three/addons/utils/BufferGeometryUtils.js"),
+    ]);
+  } catch (e) {
+    throw new Error("The 3D viewer could not load three.js from cdn.jsdelivr.net (offline?). " +
+      "Reload when online; the downloads beside it work without it.");
+  }
+  const tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
+  // STL bytes are embedded in the page (gzip + base64), so nothing is fetched: works from file://.
+  async function stlBuffer(file) {
+    const b64 = $("mesh-" + file.replace(/\.stl$/, "")).textContent.trim();
+    const gz = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    return new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+  }
+
+  // ---- renderer, scene, camera (z-up, like the STLs) ----
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;  // three r187 removed PCFSoftShadowMap
+  const canvas = renderer.domElement;
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", "Interactive 3D model. Drag to orbit, right-drag to pan, scroll or pinch to zoom, arrow keys pan.");
+  canvas.tabIndex = 0;
+  stage.prepend(canvas);
+  const scene = new THREE.Scene();
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.55;
+  const camera = new THREE.PerspectiveCamera(30, 1, 2, 8000);
+  camera.up.set(0, 0, 1);  // z-up; must be set before OrbitControls
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.09;
+  controls.screenSpacePanning = true;
+  controls.minDistance = 40;
+  controls.maxDistance = 3000;
+  controls.autoRotateSpeed = 0.9;
+  controls.listenToKeyEvents(canvas);  // arrow keys pan while the canvas has focus
+
+  // Lights on the physical scale (three r155+): sky/ground fill, a shadow-casting key, a cool fill.
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x777777, 1.1);
+  const key = new THREE.DirectionalLight(0xffffff, 2.3);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.25;
+  Object.assign(key.shadow.camera, { left: -260, right: 260, top: 260, bottom: -260, near: 10, far: 2000 });
+  const fill = new THREE.DirectionalLight(0xcfe2ff, 0.7);
+  scene.add(hemi, key, key.target, fill, fill.target);
+
+  // Ground: a shadow catcher and a 10 mm grid; the model stands on it, centred on the origin.
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.ShadowMaterial({ opacity: 0.25 }));
+  ground.position.z = -0.02;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  let grid = null, shadowBase = 0.25;
+  const root = new THREE.Group();
+  scene.add(root);
+
+  const materials = {
+    rigid: new THREE.MeshStandardMaterial({ color: 0xc89b6d, roughness: 0.78, metalness: 0, envMapIntensity: 0.7 }),
+    // TPU: very rough, a little less environment light and a faint sheen, so it reads as soft rubber
+    tpu: new THREE.MeshPhysicalMaterial({ color: 0x5c6a76, roughness: 0.92, metalness: 0, envMapIntensity: 0.45,
+                                          sheen: 0.55, sheenRoughness: 0.7, sheenColor: 0x8d99a3 }),
+  };
+  // The part last clicked, lit a little, so it stands out in the final form without changing colour.
+  const lit = (m) => Object.assign(m.clone(), { emissive: m.color.clone(), emissiveIntensity: 0.3 });
+  const highlight = { rigid: lit(materials.rigid), tpu: lit(materials.tpu) };
+  // Translucent without depth writes, so whatever is inside stays visible.
+  const ghostMaterial = Object.assign(new THREE.MeshStandardMaterial({ color: 0xa3a6a9, roughness: 0.5 }),
+    { transparent: true, opacity: 0.25, depthWrite: false });
+  // The manifest's matrices are row-major, which is what Matrix4.set() takes (fromArray() would transpose them).
+  const rowMajor = (m) => new THREE.Matrix4().set(...m);
+  const loader = new STLLoader();
+  const cache = new Map();
+  let request = 0, box = null, radius = 150, view = "hero", tween = null, needsRender = true;
+  const invalidate = () => { needsRender = true; };
+
+  // Each STL is decoded once, in its own (print or world) frame, smooth-shaded except at creases over 30°.
+  function geometryFor(file) {
+    if (!cache.has(file)) cache.set(file, stlBuffer(file).then((b) => toCreasedNormals(loader.parse(b), Math.PI / 6)));
+    return cache.get(file);
+  }
+
+  function applyTheme() {
+    scene.background = new THREE.Color(tok("--scene-bg"));
+    hemi.color.set(tok("--scene-sky"));
+    hemi.groundColor.set(tok("--scene-ground"));
+    shadowBase = parseFloat(tok("--scene-shadow")) || 0.25;
+    fill.intensity = parseFloat(tok("--scene-fill")) || 0.7;
+    ghostMaterial.color.set(tok("--scene-ghost") || "#a3a6a9");
+    if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
+    grid = new THREE.GridHelper(1000, 100, new THREE.Color(tok("--scene-grid-major")), new THREE.Color(tok("--scene-grid")));
+    grid.rotation.x = Math.PI / 2;  // into the XY plane: the scene is z-up
+    grid.position.z = -0.05;
+    Object.assign(grid.material, { transparent: true, opacity: 0.9, depthWrite: false });
+    scene.add(grid);
+    invalidate();
+  }
+
+  // ---- camera presets, fitted to what is shown ----
+  const VIEWS = { hero: [0.8, -1.1, 0.75], front: [0, -1, 0.12], side: [1, 0, 0.12], top: [0, -0.02, 1] };
+  const VIEW_LABEL = { hero: "3/4", front: "Front", side: "Side", top: "Top" };
+  // Camera distance along dir so every corner of the box fits the view, with a margin.
+  function fit(dir) {
+    const c = box.getCenter(new THREE.Vector3());
+    const basis = new THREE.Matrix4().lookAt(dir, new THREE.Vector3(), camera.up);
+    const right = new THREE.Vector3().setFromMatrixColumn(basis, 0), up = new THREE.Vector3().setFromMatrixColumn(basis, 1);
+    const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.8, tanH = tanV * camera.aspect;
+    let dist = 10;
+    for (let i = 0; i < 8; i++) {
+      const p = new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(c);
+      const depth = -p.dot(dir);
+      dist = Math.max(dist, Math.abs(p.dot(right)) / tanH - depth, Math.abs(p.dot(up)) / tanV - depth);
+    }
+    return { pos: c.clone().addScaledVector(dir, dist), target: c };
+  }
+  // name: a preset; null keeps the current orbit direction (a new pick refits without spinning the camera).
+  function goTo(name, instant) {
+    let dir;
+    if (name) {
+      view = name;
+      for (const b of document.querySelectorAll("[data-view]")) b.setAttribute("aria-pressed", String(b.dataset.view === name));
+      $("tb-view").textContent = VIEW_LABEL[name];
+      dir = new THREE.Vector3(...VIEWS[name]);
+    } else {
+      dir = camera.position.clone().sub(controls.target);
+    }
+    const f = fit(dir.normalize());
+    if (instant || reduceMotion.matches) {
+      camera.position.copy(f.pos);
+      controls.target.copy(f.target);
+      controls.update();
+      tween = null;
+      invalidate();
+      return;
+    }
+    tween = { t0: performance.now(), p0: camera.position.clone(), q0: controls.target.clone(), p1: f.pos, q1: f.target };
+  }
+  controls.addEventListener("start", () => { tween = null; });
+  controls.addEventListener("change", invalidate);
+
+  // Centre everything shown on the grid, standing on it, and refit the camera.
+  let framed = false;
+  function frame() {
+    root.position.set(0, 0, 0);
+    root.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(root), c = b.getCenter(new THREE.Vector3());
+    root.position.set(-c.x, -c.y, -b.min.z);
+    root.updateMatrixWorld(true);
+    box = b.translate(root.position);
+    radius = box.getBoundingSphere(new THREE.Sphere()).radius;
+    goTo(framed ? null : view, !framed);
+    framed = true;
+  }
+
+  async function show() {
+    const id = ++request;
+    const final = onGrinder.checked;
+    const plan = scenePlan();
+    say("Decoding " + (final ? "the final form" : state.last) + "…");
+    let geoms;
+    try {
+      geoms = await Promise.all(plan.map(([f]) => geometryFor(f)));
+    } catch (e) {
+      if (id === request) say("Could not decode the meshes.");
+      return;
+    }
+    if (id !== request) return;  // a newer pick won
+    root.clear();
+    plan.forEach(([f, m], i) => {
+      const ghost = f === manifest.ghost.file;
+      const mesh = new THREE.Mesh(geoms[i], ghost ? ghostMaterial
+        : (final && f === state.last ? highlight : materials)[kind(byFile.get(f))]);
+      mesh.matrixAutoUpdate = false;
+      if (m) mesh.matrix.copy(rowMajor(m));
+      // in the final form only the base (on the ground) casts: the ghost holding the hopper casts none
+      mesh.castShadow = !ghost && (!final || !m);
+      mesh.receiveShadow = !ghost;
+      root.add(mesh);
+    });
+    frame();
+    say("");
+  }
+
+  // ---- render loop: only when something moved ----
+  function resize() {
+    const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    invalidate();
+  }
+  new ResizeObserver(resize).observe(stage);
+  resize();
+
+  const triad = { x: $("ax-x"), y: $("ax-y"), z: $("ax-z"), lx: $("lb-x"), ly: $("lb-y"), lz: $("lb-z") };
+  const tmp = new THREE.Vector3();
+  function updateTriad() {
+    const q = camera.quaternion.clone().invert();
+    for (const [a, vec] of [["x", [1, 0, 0]], ["y", [0, 1, 0]], ["z", [0, 0, 1]]]) {
+      tmp.set(...vec).applyQuaternion(q);
+      const x = tmp.x * 20, y = -tmp.y * 20;
+      triad[a].setAttribute("x2", x.toFixed(1));
+      triad[a].setAttribute("y2", y.toFixed(1));
+      triad["l" + a].setAttribute("x", (x * 1.25 - 3.5).toFixed(1));
+      triad["l" + a].setAttribute("y", (y * 1.25 + 3.5).toFixed(1));
+    }
+  }
+  // The key light keeps its place relative to the target, scaled to what is shown.
+  function placeLights() {
+    const c = controls.target, k = Math.max(1, radius / 150);
+    key.position.set(c.x - 160 * k, c.y - 230 * k, c.z + 320 * k);
+    key.target.position.copy(c);
+    fill.position.set(c.x + 260 * k, c.y + 200 * k, c.z + 140 * k);
+    fill.target.position.copy(c);
+  }
+  renderer.setAnimationLoop((now) => {
+    if (tween) {
+      const t = Math.min(1, (now - tween.t0) / 700), e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      camera.position.lerpVectors(tween.p0, tween.p1, e);
+      controls.target.lerpVectors(tween.q0, tween.q1, e);
+      if (t >= 1) tween = null;
+      needsRender = true;
+    }
+    const moved = controls.update();
+    if (!(moved || needsRender || controls.autoRotate)) return;
+    needsRender = false;
+    const toCam = camera.position.clone().sub(controls.target);
+    const below = camera.position.z < 0;
+    grid.visible = ground.visible = !below;
+    const elev = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(toCam.z / (toCam.length() || 1), -1, 1)));
+    ground.material.opacity = shadowBase * clamp01((elev - 4) / 16);  // shadows fade out at grazing angles
+    placeLights();
+    updateTriad();
+    renderer.render(scene, camera);
+  });
+
+  for (const b of document.querySelectorAll("[data-view]")) b.addEventListener("click", () => goTo(b.dataset.view));
+  const spin = $("autorotate");
+  controls.autoRotate = spin.checked;
+  spin.addEventListener("change", () => { controls.autoRotate = spin.checked; invalidate(); });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+  applyTheme();
+  return { show };
+}
 </script>
 </body>
 </html>

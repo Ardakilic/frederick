@@ -24,7 +24,7 @@ def test_defaults_load():
     cfg = load_config()
     assert cfg.BASE_ANGLE == 10.0
     assert set(cfg.BASE_VARIANTS) == {"solid", "window", "frame-solid", "frame-window"}
-    assert set(cfg.INSERT_VARIANTS) == {"friction", "screw"}
+    assert set(cfg.INSERT_VARIANTS) == {"friction", "screw", "screw-reinforced"}
     assert list(cfg.HOPPER_KITS) == ["3-part", "capped-bellows", "two-piece"]
 
 

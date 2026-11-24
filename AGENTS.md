@@ -23,9 +23,9 @@ config.py                  every design parameter, one commented UPPER_CASE cons
 generate.py                builds every part -> stl/*.stl + build/manifest.json; CLI overrides
 geometry/common.py         config load/validate/--set, shapely -> manifold3d -> trimesh helpers
 geometry/base.py           angled base: deck frame, pockets, frame/rim, window, pads, cable notch
-geometry/hopper.py         insert (+ screw hub), capped + open TPU bellows, two-piece body, shared cap, kit poses; revolved profiles
+geometry/hopper.py         insert (+ plain or reinforced screw hub), capped + open TPU bellows, two-piece body, shared cap, kit poses; revolved profiles
 geometry/grinder.py        grinder ghost (preview only, approximate) + poses: throat, on the base
-tools/build_site.py        _site/: template + manifest + embedded gzip/base64 STLs and ghost, copies stl/
+tools/build_site.py        _site/: template + manifest + embedded gzip/base64 STLs and ghost, copies stl/, zip bundles; REPO_URL
 preview/template.html      the preview page: CSS, import map, three.js viewer module
 tests/test_base.py         base geometry, measured with vertical rays
 tests/test_hopper.py       every hopper part, kit poses, fit + capacity of every kit, the cap on both collars
@@ -33,7 +33,7 @@ tests/test_grinder.py      ghost body, ghost on every base, kits clear of the gh
 tests/test_common.py       mesh helpers
 tests/test_config.py       config loading, validation, --set
 tests/test_generate.py     manifest logic: entries, kits, final-form placements (no meshes built)
-tests/test_site.py         site build: embedded meshes round-trip, links, placeholders
+tests/test_site.py         site build: embedded meshes round-trip, links, bundles (members, determinism), print panel, GitHub links, placeholders
 stl/                       generated STLs, COMMITTED deliverables (print orientation)
 build/, _site/             generated, gitignored (manifest + grinder ghost STL; the Pages site)
 Dockerfile                 python:3.14-slim + the pinned wheels; HOME=/tmp
@@ -54,7 +54,7 @@ make                       # = make generate test site
 make generate              # stl/*.stl + build/manifest.json (prints size, volume, triangles)
 make generate GEN_ARGS="--angle 12 --set NAME=VALUE"   # one-off overrides, repeat --set
 make test                  # pytest -q
-make site                  # _site/index.html + _site/stl/ (open the HTML by double-click)
+make site                  # _site/index.html + _site/stl/ + _site/bundles/*.zip (open the HTML by double-click)
 make serve PORT=9000       # optional: serve _site at http://localhost:9000
 make shell                 # bash in the build image
 make image                 # (re)build the frederick-build image (cached; byte-neutral)
@@ -100,7 +100,8 @@ is built. `--angle` is a shortcut for `BASE_ANGLE`.
   page decodes with `DecompressionStream("gzip")` and `STLLoader.parse()`. No
   `fetch()`, so `_site/index.html` works from `file://` (about 2 MB). three.js
   loads by dynamic `import()` from jsDelivr (sends CORS headers), so an offline
-  load is caught and explained. Download links stay plain `stl/<file>.stl`.
+  load is caught and explained. Download links stay plain relative `stl/<file>.stl`
+  and `bundles/<name>.zip` hrefs with `download` (they work from `file://` too).
 - **CI regenerates, tests, then deploys.** The workflow runs `make image`, then
   `make generate test site`, and uploads `_site/` as a static Pages artifact. A
   failing test fails make, the job stops, nothing deploys (the last good site
@@ -154,15 +155,29 @@ would break that. Shared pieces have one helper each: `_folds()` (the zig-zag,
 flank check), `_ring()` (plug-in ring radii, socket checks), `_top_collar()`
 (the collar the cap plugs into).
 
-- **Insert** (`build_insert(cfg, screw_hub=)`), bottom up: the spout (OD
+- **Insert** (`build_insert(cfg, screw_hub=, reinforced=False)`), bottom up: the spout (OD
   `THROAT_ID - SPOUT_CLEARANCE`, `THROAT_DEPTH` long) into the throat; a 45°
   collar out to the seat on the ring face around the bore; the circular-arc
   bulb (starts `INSERT_WALL` above the spout top so the corner keeps a full
   wall, vertical at the top, bottom tangent <= `MAX_OVERHANG` from vertical); the
   socket for the bellows ring, whose floor ledge (funnel top ID < socket ID)
-  stops the bellows. Variants (`INSERT_VARIANTS`): `friction` (spout fit only)
-  and `screw` (adds a hub on spokes inside the spout, with a hole for the
-  stock central screw).
+  stops the bellows. Variants (`INSERT_VARIANTS`, each entry's flags are
+  `build_insert()` keywords): `friction` (spout fit only), `screw` (adds a
+  `HUB_*` hub on `SPOKE_W` spokes inside the spout, with a hole for the stock
+  central screw; keep its STL byte-identical, `test_screw_unchanged` pins it)
+  and `screw-reinforced` (`_strong_hub()`: `STRONG_HUB_OD` x `STRONG_HUB_H`
+  hub, a flat `WASHER_D + WASHER_CLEARANCE` washer seat at `STRONG_HUB_H` and a
+  45° cone from it down to the hub OD; `STRONG_SPOKE_W` spokes with full
+  `STRONG_HUB_H` sides and a 45° peaked roof on top (ridge `STRONG_SPOKE_W / 2`
+  higher, about 5.4x the plain spoke's second moment), starting just outside the
+  seat with their corners inside the hub; it rejects spokes wider than half the
+  bore circumference in total or that miss the hub outside the seat, a hub over
+  spout ID - 4, a seat that misses the hole or the hub, a hub lower than its
+  cone or a ridge above `THROAT_DEPTH`).
+  Both hubs sit below `THROAT_DEPTH`, so they never cut kit capacity.
+- **Print info** (`generate.PRINT_INFO`, not config: they are not parameters):
+  kind -> material, print hint and `material_note` (1–3 sentences) for every
+  manifest item; inserts map to a kind by their flags (`generate.insert_kind`).
 - **Capped bellows** (`build_bellows`, `frederick-hopper-bellows-capped`): cap
   down, then zig-zag folds with 45° flanks (`BELLOWS_FOLD_PITCH` >= 2 x
   `BELLOWS_FOLD_DEPTH`), then the plug-in ring (OD `SOCKET_ID -
@@ -239,6 +254,22 @@ slightly (emissive), the camera refitted. Printed parts are opaque, rigid tan
 and TPU slate. The ghost is embedded, never linked. On load the default base
 button is pressed, so the slots and the pressed button agree.
 
+The page design follows the sibling projects (ithalat's drafting bench, filtarr's
+"Print these" panel): masthead with the GitHub link, stage (z-up camera, OrbitControls,
+RoomEnvironment + hemisphere/key/fill on the physical scale, shadow catcher + 10 mm grid,
+view presets, auto-rotate, title block, axis triad) and a side panel (picker, "Print
+these", all downloads, parameters with the `config.py` link). Colours are CSS tokens
+(`--scene-*` feed the scene) with light and dark sets. The picker and the print panel
+run before three.js loads, so they work offline or without WebGL.
+
+**Bundles** (`build_site.bundles`): one zip per base variant, per kit x insert
+(`frederick-hopper-<kit>[-<insert>].zip`) and `frederick-all.zip`, each with a
+`README.txt` (parts, material, optional `material_note`, print hint, links). Entries are
+sorted, stamped `ZIP_DATE`, mode 0644, deflate 9: rebuilds are byte-identical. The
+"Print these" sets are rendered server-side (one per bundle but "all", `data-base` or
+`data-kit` + `data-insert`); the script shows the one of the slot last clicked and copies
+its zip href into the phone's sticky bar.
+
 ## Research and sources
 
 | Fact | Value | Source | Confidence |
@@ -276,6 +307,8 @@ printing" has the user-facing version):
 - `THROAT_ID`, `THROAT_DEPTH`: spout fit and length.
 - `SHOULDER_OD`: outer Ø of the flat ring face the collar seats on.
 - `SCREW_HOLE_D`, `HUB_OD`, `HUB_H`: the stock central screw (diameter, length).
+  `screw-reinforced` adds `STRONG_HUB_H` 8 plus a `WASHER_D` washer under the
+  head, so the screw's length and thread need checking too.
 
 ## Gotchas
 

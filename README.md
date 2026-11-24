@@ -29,15 +29,15 @@ Tilts the grinder 10° forward (front low). The grinder's four rubber feet sit i
 
 ### Single-dose hopper kits
 
-The hopper parts print separately and go together in three kits. The insert and the cap are shared, so each is one STL; the insert slot takes either insert variant (friction by default).
+The hopper parts print separately and go together in three kits. The insert and the cap are shared, so each is one STL; the insert slot takes any of the three insert variants (friction by default).
 
 | Kit | Parts, bottom up | Materials | Assembled height above the throat floor | Capacity |
 |---|---|---|---|---|
-| `3-part` | insert + open bellows + cap | PLA + TPU + PLA | 127.15 | about 277 ml (bulb 89 + bellows 188) |
-| `capped-bellows` | insert + capped bellows | PLA + TPU | 118.15 | about 250 ml (bulb 89 + bellows 160) |
-| `two-piece` | two-piece body + cap | TPU + PLA | 114.3 | about 226 ml (cone 61 + bellows and collar 165) |
+| `3-part` | insert + open bellows + cap | PETG + TPU + PETG/PLA | 127.15 | about 277 ml (bulb 89 + bellows 188) |
+| `capped-bellows` | insert + capped bellows | PETG + TPU | 118.15 | about 250 ml (bulb 89 + bellows 160) |
+| `two-piece` | two-piece body + cap | TPU + PETG/PLA | 114.3 | about 226 ml (cone 61 + bellows and collar 165) |
 
-`DOSE_VOLUME_ML` = 60 is the minimum capacity the tests enforce for every kit. The kits are listed in `HOPPER_KITS` in `config.py`.
+`DOSE_VOLUME_ML` = 60 is the minimum capacity the tests enforce for every kit, with every insert variant (the screw hubs sit inside the spout, below the counted bean path). The kits are listed in `HOPPER_KITS` in `config.py`.
 
 ### Insert: `stl/frederick-hopper-insert-<variant>.stl`
 
@@ -53,7 +53,8 @@ Drops into the throat in place of the stock hopper. Shaped after [Papel Espresso
 | Variant | What's different | Volume |
 |---|---|---|
 | `friction` | held by the spout fit only | 23.5 cm³ |
-| `screw` | adds a Ø10 × 6 hub on 3 spokes, Ø4.4 hole for the stock central screw | 24.4 cm³ |
+| `screw` | adds a Ø10 × 6 hub on 3 spokes (3 wide, flat tops), Ø4.4 hole for the stock central screw | 24.4 cm³ |
+| `screw-reinforced` | the screw clamps the hub while the collar rests on the ring, so the spokes bend: a Ø12 × 8 hub with a flat Ø9.5 seat at 8 for an M4 DIN 125 washer and a 45° cone from the seat down to the hub OD, so beans slide off; 3 spokes 4.5 wide with full 8 tall sides and a 45° peaked roof on top (ridge at 10.25, clear of the seat), about 5.4 × as stiff as the `screw` spokes | 25.4 cm³ |
 
 ### Capped bellows: `stl/frederick-hopper-bellows-capped.stl`
 
@@ -110,6 +111,7 @@ Most grinder figures are **research estimates**, not measurements. Check these o
 | `THROAT_ID`, `THROAT_DEPTH` | 33.8, 20 | seller's figure, parts-diagram estimate | Spout OD and length. If it's too tight, the insert won't seat; too loose, and it wobbles. |
 | `SHOULDER_OD` | 40 | reference collar, about 1.2 × the spout OD | The 45° shoulder rests on the flat ring face around the bore. Measure that face's outer Ø. |
 | `SCREW_HOLE_D`, `HUB_OD`, `HUB_H` | 4.4, 10, 6 | M4 guess (screw CD553INOX, size unverified) | `screw` insert only: hole and hub for the stock central hopper screw. Measure the screw's diameter and length. |
+| `STRONG_HUB_H`, `WASHER_D` | 8, 9 | M4 DIN 125 washer | `screw-reinforced` only: the screw must reach through an 8 tall hub plus the washer. Check its length and thread first. |
 
 ## Build (Docker only)
 
@@ -129,22 +131,28 @@ You need Docker and make. Nothing is installed on the host.
 
 ## Print settings
 
+For anything that touches beans, use filament certified food-safe and a stainless or hardened nozzle (brass nozzles can contain lead). Wash the parts by hand and keep them out of the dishwasher. The preview page shows the same material note with each part.
+
 | Part | Material | Settings |
 |---|---|---|
-| Base | PLA or PETG | deck up, no supports, 4 walls, 20–30 % infill |
-| Insert | PLA or PETG | spout down, no supports |
-| Capped bellows | TPU 95A | cap on the bed, no supports; 3+ walls or 100 % infill |
-| Open bellows | TPU 95A | ring on the bed, no supports; 3+ walls or 100 % infill |
-| Two-piece body | TPU 95A | spout down, no supports |
-| Cap | PLA or PETG | top face down, no supports |
+| Base | PLA or PETG; PETG or ASA near a hot espresso machine | deck up, no supports, 4 walls, 20–30 % gyroid infill; Ø12.7 silicone bumpers in the pad recesses |
+| Insert `friction` | PETG (food-safe is best), or PLA+; PLA-CF needs a hardened nozzle | spout down, no supports |
+| Insert `screw` | PETG or ASA (PLA creeps under the screw clamp, and the screw works loose) | spout down, no supports; 5+ walls or 100 % infill around the hub; use a washer, tighten only until snug |
+| Insert `screw-reinforced` | as `screw`; the stronger choice if you clamp with the stock screw | as `screw`; check the screw's length and thread first |
+| Capped bellows | TPU 95A (85A pumps more easily, prints harder) | cap on the bed, no supports; 20–30 mm/s, 2–3 walls, minimal retraction |
+| Open bellows | TPU 95A (85A pumps more easily, prints harder) | ring on the bed, no supports; 20–30 mm/s, 2–3 walls, minimal retraction |
+| Two-piece body | TPU 95A; 98A for a stiffer spout if the fit feels loose | spout down, no supports; the bellows' slow settings |
+| Cap | PETG or PLA | top face down, no supports, 100 % infill (it's thin) |
 
 ## Preview site (GitHub Pages)
 
 Live at <https://ardakilic.github.io/frederick/>. `make site` builds the same page locally into `_site/`.
 
-The page is fully static and self-contained. Every STL is embedded in `_site/index.html` (gzip + base64 of the exact file bytes, about 2 MB in total), and the browser decodes it itself. That means you can **double-click `_site/index.html`** and it works from disk, with no server. `make serve` is still there if you prefer `http://localhost`. Only three.js comes from the network (pinned jsDelivr import map); offline, the page says so, and the downloads still work. The download links are plain `stl/<file>.stl` files next to the page.
+The page is fully static and self-contained. Every STL is embedded in `_site/index.html` (gzip + base64 of the exact file bytes, about 2 MB in total), and the browser decodes it itself. That means you can **double-click `_site/index.html`** and it works from disk, with no server. `make serve` is still there if you prefer `http://localhost`. Only three.js comes from the network (pinned jsDelivr import map); offline, the page says so, and the downloads still work. The download links are plain relative `stl/<file>.stl` and `bundles/<name>.zip` files next to the page.
 
-The part buttons are grouped as the angled base variants, then one row per hopper kit. A shared part (the insert, the cap) has a button in every kit that uses it; the download list still has each file once.
+**Downloads.** The "Print these" panel follows your last click: the base variant, or the hopper kit with its insert. It lists each file with its material and print hint, a direct STL link and a "view on GitHub" link (GitHub renders STLs in 3D), plus a **Download bundle (.zip)** button. On a phone a sticky bar at the bottom keeps that bundle one tap away. `make site` writes one zip per base variant (`frederick-base-<variant>.zip`), one per hopper kit and insert variant (`frederick-hopper-3-part-friction.zip`, ...; `frederick-hopper-two-piece.zip` has no insert) and `frederick-all.zip`; each holds the STLs plus a `README.txt` with every part's material, print orientation and settings. The zips are deterministic (fixed timestamps, sorted entries), so a rebuild gives the same bytes. "All downloads" lists every bundle and each STL once.
+
+The part buttons are grouped as the angled base variants, then one row per hopper kit; the buttons of the current base and kit are outlined, the last one clicked is filled. The camera presets (3/4, front, side, top), auto-rotate, the title block and the axis triad sit on the stage. A shared part (the insert, the cap) has a button in every kit that uses it; the download list still has each file once.
 
 **Show on grinder.** The toggle under the part buttons (off by default) shows the final form: the last base variant you clicked (`frame-solid` at first), the grinder standing in its pockets, and every part of the last hopper kit you clicked seated in the throat (`3-part` with the friction insert at first). Clicking any base or hopper part swaps that slot, so you can flip through combinations; a caption names the current one (for example "Final form: frame-solid base · 3-part hopper (friction insert)"). Printed parts are opaque in their material colour (rigid tan, TPU slate), the part you clicked last is lit slightly, and the camera refits. The grinder is a translucent, boxy ghost built from the `GHOST_*` estimates in `config.py` (scaled from product renders, not measured). It's approximate, for context only, and not a download.
 
