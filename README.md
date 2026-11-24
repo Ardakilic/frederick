@@ -27,46 +27,73 @@ Tilts the grinder 10° forward (front low). The grinder's four rubber feet sit i
 | `frame-solid` | yes | no | 105 × 189.1 × 50.6 | 474 cm³ |
 | `frame-window` | yes | yes | 105 × 189.1 × 50.6 | 261 cm³ |
 
-### Single-dose hopper insert: `stl/frederick-hopper-insert-<variant>.stl`
+### Single-dose hopper kits
 
-Drops into the throat in place of the stock hopper. Shaped after [Papel Espresso's Fred single-dose hopper](https://www.papelespresso.com/product/lelit-fred-single-dose-hopper/): open spout, collar, a convex bulb that turns vertical at the top, and the bellows flush on top. Overall size: Ø70 × 70.
+The hopper parts print separately and go together in three kits. The insert and the cap are shared, so each is one STL; the insert slot takes either insert variant (friction by default).
+
+| Kit | Parts, bottom up | Materials | Assembled height above the throat floor | Capacity |
+|---|---|---|---|---|
+| `3-part` | insert + open bellows + cap | PLA + TPU + PLA | 127.15 | about 277 ml (bulb 89 + bellows 188) |
+| `capped-bellows` | insert + capped bellows | PLA + TPU | 118.15 | about 250 ml (bulb 89 + bellows 160) |
+| `two-piece` | two-piece body + cap | TPU + PLA | 114.3 | about 226 ml (cone 61 + bellows and collar 165) |
+
+`DOSE_VOLUME_ML` = 60 is the minimum capacity the tests enforce for every kit. The kits are listed in `HOPPER_KITS` in `config.py`.
+
+### Insert: `stl/frederick-hopper-insert-<variant>.stl`
+
+Drops into the throat in place of the stock hopper. Shaped after [Papel Espresso's Fred single-dose hopper](https://www.papelespresso.com/product/lelit-fred-single-dose-hopper/): open spout, collar, a convex bulb that turns vertical at the top, and a bellows flush on top. Overall size: Ø70 × 70. Used by the `3-part` and `capped-bellows` kits.
 
 | | |
 |---|---|
 | Spout | OD 33.6 (`THROAT_ID` − 0.2), ID 30.4, 20 long |
 | Seating shoulder | 45°, out to the `SHOULDER_OD` 40 collar (1.4 tall before the bulb rises out of it); sits on the ring face around the bore |
 | Bulb | starts 2 above the spout top (the bore runs on, so the corner keeps the full wall); circular arc (R 58.5) from the spout ID to Ø62, 40 tall, 2 wall; 43.1° from vertical at the bottom (45° max: prints spout-down, beans still slide), vertical at the top |
-| Socket for the bellows | Ø66 × 8, wall 2 |
+| Socket for the bellows | Ø66 × 8, wall 2; its floor is the ledge either bellows' ring rests on |
 
 | Variant | What's different | Volume |
 |---|---|---|
 | `friction` | held by the spout fit only | 23.5 cm³ |
 | `screw` | adds a Ø10 × 6 hub on 3 spokes, Ø4.4 hole for the stock central screw | 24.4 cm³ |
 
-### Bellows: `stl/frederick-hopper-bellows.stl`
+### Capped bellows: `stl/frederick-hopper-bellows-capped.stl`
 
-TPU cap that plugs into the insert socket; press it to blow out retained grounds. Ø70 × 56.1, 26.2 cm³.
+TPU bellows with its own cap, for the `capped-bellows` kit. It plugs into the insert socket; press it to blow out retained grounds. Ø70 × 56.1, 26.2 cm³.
 
 | | |
 |---|---|
 | Folds | 4, 11 pitch, 5.5 deep (45° flanks), 1.2 wall; narrowest bore Ø56.6 |
 | Ring | OD 65.7 (0.3 clearance in the socket) × 8 tall, 2 wall |
 | Cap | 2 thick |
-| Capacity | about 250 ml with the insert (bulb 89 + bellows 160); `DOSE_VOLUME_ML` = 60 is the minimum the tests enforce |
 
-### Two-piece hopper: `stl/frederick-hopper-2p-body.stl` + `stl/frederick-hopper-2p-cap.stl`
+### Open bellows: `stl/frederick-hopper-bellows-open.stl`
 
-The alternative to insert + bellows, shaped after the commercial 2-part Fred single-dose hopper: one TPU body (spout, straight conical funnel, bellows, open top) and a rigid cap that plugs onto it. Lift the cap off to load beans; press it to blow out retained grounds.
+TPU bellows open at both ends, for the `3-part` kit: the capped bellows' ring at the bottom, the same folds, and the two-piece body's top collar, so the one cap fits both. Lift the cap off to load beans; press it to blow out retained grounds. Ø70 × 62.1, 21.6 cm³, prints ring down.
 
 | | |
 |---|---|
-| Body | Ø70 × 111.3, 35.8 cm³, TPU 95A |
+| Ring | OD 65.7 (0.3 clearance in the socket) × 8 tall, 2 wall; plugs into the insert socket and rests on its ledge |
+| Folds | a 45° flank out from the ring top to the first peak (10.2 up), then 4 folds, 11 pitch × 5.5 deep, 1.2 wall, peaks Ø70; narrowest bore Ø56.6 |
+| Top collar | Ø70 outside, a 45° chamfer in, then bore Ø66 × 6 straight (2 wall) |
+
+### Two-piece body: `stl/frederick-hopper-2p-body.stl`
+
+The body of the `two-piece` kit, shaped after the commercial 2-part Fred single-dose hopper: one TPU part (spout, straight conical funnel, bellows, open top) that drops straight into the throat. Ø70 × 111.3, 35.8 cm³.
+
+| | |
+|---|---|
 | Spout | OD 33.6, ID 29.6 (2 wall), 20 long; the insert's 45° shoulder out to the `SHOULDER_OD` 40 collar |
 | Cone | straight, from the spout ID to Ø62 over 35, 2 wall, 24.8° from vertical; starts 2 above the spout top (the bore runs on, so the corner keeps the full wall) |
 | Folds | 4, the bellows' 11 pitch × 5.5 deep (45° flanks), 1.2 wall, peaks Ø70 |
-| Top collar | Ø70 outside, bore Ø66 × 6 straight (2 wall) |
-| Cap | Ø73 × 3 disc (1.5 lip) with a plug ring OD 65.9 (0.1 clearance in the collar) × 5 tall, 2 wall; 73 × 73 × 8, 14.6 cm³ |
-| Capacity | about 226 ml (cone 61 + bellows and collar 165) |
+| Top collar | the open bellows' collar: Ø70 outside, bore Ø66 × 6 straight (2 wall) |
+
+### Cap: `stl/frederick-hopper-cap.stl`
+
+The rigid cap of the `3-part` and `two-piece` kits. It plugs into the top collar, which the open bellows and the two-piece body share. 73 × 73 × 8, 14.6 cm³.
+
+| | |
+|---|---|
+| Disc | Ø73 × 3 (1.5 lip over the collar) |
+| Plug ring | OD 65.9 (0.1 clearance in the collar) × 5 tall, 2 wall |
 
 The variants are listed in `BASE_VARIANTS` and `INSERT_VARIANTS` in `config.py`.
 
@@ -106,17 +133,20 @@ You need Docker and make. Nothing is installed on the host.
 |---|---|---|
 | Base | PLA or PETG | deck up, no supports, 4 walls, 20–30 % infill |
 | Insert | PLA or PETG | spout down, no supports |
-| Bellows | TPU 95A | cap on the bed, no supports; 3+ walls or 100 % infill |
+| Capped bellows | TPU 95A | cap on the bed, no supports; 3+ walls or 100 % infill |
+| Open bellows | TPU 95A | ring on the bed, no supports; 3+ walls or 100 % infill |
 | Two-piece body | TPU 95A | spout down, no supports |
-| Two-piece cap | PLA or PETG | top face down, no supports |
+| Cap | PLA or PETG | top face down, no supports |
 
 ## Preview site (GitHub Pages)
 
 Live at <https://ardakilic.github.io/frederick/>. `make site` builds the same page locally into `_site/`.
 
-The page is fully static and self-contained. Every STL is embedded in `_site/index.html` (gzip + base64 of the exact file bytes, about 1.7 MB in total), and the browser decodes it itself. That means you can **double-click `_site/index.html`** and it works from disk, with no server. `make serve` is still there if you prefer `http://localhost`. Only three.js comes from the network (pinned jsDelivr import map); offline, the page says so, and the downloads still work. The download links are plain `stl/<file>.stl` files next to the page.
+The page is fully static and self-contained. Every STL is embedded in `_site/index.html` (gzip + base64 of the exact file bytes, about 2 MB in total), and the browser decodes it itself. That means you can **double-click `_site/index.html`** and it works from disk, with no server. `make serve` is still there if you prefer `http://localhost`. Only three.js comes from the network (pinned jsDelivr import map); offline, the page says so, and the downloads still work. The download links are plain `stl/<file>.stl` files next to the page.
 
-**Show on grinder.** The toggle under the part buttons (off by default) puts the selected part in context: a base with the grinder standing in its pockets, or a hopper part seated in the throat with its kit partner (insert + bellows, body + cap) shown faintly. The grinder is a translucent, boxy ghost built from the `GHOST_*` estimates in `config.py` (scaled from product renders, not measured). It's approximate, for context only, and not a download.
+The part buttons are grouped as the angled base variants, then one row per hopper kit. A shared part (the insert, the cap) has a button in every kit that uses it; the download list still has each file once.
+
+**Show on grinder.** The toggle under the part buttons (off by default) shows the final form: the last base variant you clicked (`frame-solid` at first), the grinder standing in its pockets, and every part of the last hopper kit you clicked seated in the throat (`3-part` with the friction insert at first). Clicking any base or hopper part swaps that slot, so you can flip through combinations; a caption names the current one (for example "Final form: frame-solid base · 3-part hopper (friction insert)"). Printed parts are opaque in their material colour (rigid tan, TPU slate), the part you clicked last is lit slightly, and the camera refits. The grinder is a translucent, boxy ghost built from the `GHOST_*` estimates in `config.py` (scaled from product renders, not measured). It's approximate, for context only, and not a download.
 
 `.github/workflows/pages.yml` runs `make image`, then `make generate test site`, on every push to `main`, and deploys `_site/` to GitHub Pages as static files. If a test fails, nothing is deployed. **One-time setup:** *Settings > Pages > Build and deployment > Source: GitHub Actions*.
 

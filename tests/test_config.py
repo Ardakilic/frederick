@@ -25,6 +25,7 @@ def test_defaults_load():
     assert cfg.BASE_ANGLE == 10.0
     assert set(cfg.BASE_VARIANTS) == {"solid", "window", "frame-solid", "frame-window"}
     assert set(cfg.INSERT_VARIANTS) == {"friction", "screw"}
+    assert list(cfg.HOPPER_KITS) == ["3-part", "capped-bellows", "two-piece"]
 
 
 def test_override_applies_without_leaking():
@@ -50,6 +51,7 @@ def test_unknown_name_exits_with_suggestion():
     {"POCKET_DEPTH": 10.1},           # = FOOT_H
     {"SPOUT_WALL": 17.0},             # no spout bore left
     {"BELLOWS_FOLD_DEPTH": 35.0},     # folds meet in the middle
+    {"HOPPER_KITS": {}},              # no kit for the preview to start on
 ])
 def test_validate_rejects_bad_values(overrides):
     """Nonsense combinations raise ValueError.

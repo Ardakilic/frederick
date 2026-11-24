@@ -63,8 +63,8 @@ def validate(cfg):
         (spout_id > 0, "spout ID THROAT_ID - SPOUT_CLEARANCE - 2 * SPOUT_WALL must be > 0"),
         (2 * cfg.BELLOWS_FOLD_DEPTH < cfg.BELLOWS_OD, "2 * BELLOWS_FOLD_DEPTH must be < BELLOWS_OD"),
         (cfg.SEGMENTS >= 16, "SEGMENTS must be >= 16"),
-        (bool(cfg.BASE_VARIANTS) and bool(cfg.INSERT_VARIANTS),
-         "BASE_VARIANTS and INSERT_VARIANTS must not be empty"),
+        (bool(cfg.BASE_VARIANTS) and bool(cfg.INSERT_VARIANTS) and bool(cfg.HOPPER_KITS),
+         "BASE_VARIANTS, INSERT_VARIANTS and HOPPER_KITS must not be empty"),
     ]
     errors = [msg for ok, msg in checks if not ok]
     if errors:

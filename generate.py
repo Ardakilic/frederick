@@ -19,18 +19,21 @@ from geometry.common import add_cli_args, config_from_args
 ROOT = os.path.dirname(os.path.abspath(__file__))
 GHOST_FILE = "frederick-grinder-ghost.stl"  # in build/: preview only, never a download
 
+DEFAULT_BASE = "frame-solid"  # base the preview's final form starts on (else the first BASE_VARIANTS entry)
+
 # kind -> (material, print hint)
 PRINT_INFO = {
     "base": ("PLA/PETG", "4 walls, 20-30 % infill, no supports, deck up"),
     "insert": ("PLA/PETG", "spout down, no supports"),
-    "bellows": ("TPU 95A", "cap on the bed, no supports; 3+ walls or 100 % infill is fine"),
+    "bellows-capped": ("TPU 95A", "cap on the bed, no supports; 3+ walls or 100 % infill is fine"),
+    "bellows-open": ("TPU 95A", "ring on the bed, no supports; 3+ walls or 100 % infill is fine"),
     "2p-body": ("TPU 95A", "spout down, no supports"),
-    "2p-cap": ("PLA/PETG", "top face down, no supports"),
+    "cap": ("PLA/PETG", "top face down, no supports"),
 }
 
 
 def build_parts(cfg):
-    """Build every part.
+    """Build every part, each once (kits share the insert and the cap).
 
     The geometry modules are imported here, so this file imports even while
     they are missing.
@@ -42,7 +45,7 @@ def build_parts(cfg):
         List of (group, file, label, kind, trimesh.Trimesh).
     """
     from geometry.base import build_base
-    from geometry.hopper import build_bellows, build_insert, build_two_piece_body, build_two_piece_cap
+    from geometry.hopper import build_bellows, build_bellows_open, build_cap, build_insert, build_two_piece_body
 
     parts = []
     for name, flags in cfg.BASE_VARIANTS.items():
@@ -50,12 +53,13 @@ def build_parts(cfg):
                       build_base(cfg, frame=flags["frame"], window=flags["window"])))
     hopper = "Single-dose hopper"
     for name, flags in cfg.INSERT_VARIANTS.items():
-        parts.append((hopper, f"frederick-hopper-insert-{name}.stl", f"Insert + bellows: {name} insert",
-                      "insert", build_insert(cfg, screw_hub=flags["screw_hub"])))
-    parts.append((hopper, "frederick-hopper-bellows.stl", "Insert + bellows: bellows", "bellows",
-                  build_bellows(cfg)))
-    parts.append((hopper, "frederick-hopper-2p-body.stl", "Two-piece: body", "2p-body", build_two_piece_body(cfg)))
-    parts.append((hopper, "frederick-hopper-2p-cap.stl", "Two-piece: cap", "2p-cap", build_two_piece_cap(cfg)))
+        parts.append((hopper, f"frederick-hopper-insert-{name}.stl", f"Insert: {name}", "insert",
+                      build_insert(cfg, screw_hub=flags["screw_hub"])))
+    for kind, label, build in [("bellows-capped", "Capped bellows", build_bellows),
+                               ("bellows-open", "Open bellows", build_bellows_open),
+                               ("2p-body", "Two-piece body", build_two_piece_body),
+                               ("cap", "Cap", build_cap)]:
+        parts.append((hopper, f"frederick-hopper-{kind}.stl", label, kind, build(cfg)))
     return parts
 
 
@@ -117,45 +121,44 @@ def row_major(matrix):
     return [round(float(v), 6) for v in np.asarray(matrix, dtype=float).ravel()]
 
 
-def kit_partners(cfg, kind):
-    """The parts the preview shows faintly with this one, so the hopper looks complete.
+def final_form(cfg):
+    """What the preview's "Show on grinder" view draws: a base, the ghost on it, a hopper kit in its throat.
+
+    Placements are row_major() 4x4s from an STL's own frame into the base's
+    world frame. A base stays put, the ghost stands in its pockets
+    (grinder_on_base_pose) and each kit part goes to
+    grinder_on_base_pose @ throat_pose @ its kit pose. None depends on the base variant.
 
     Args:
         cfg: Config namespace from load_config().
-        kind: Key of PRINT_INFO.
 
     Returns:
-        List of STL file names (empty for the base).
+        Dict with ghost ({file, placement}), bases ({variant: file}), kits
+        (one {key, inserts: {variant: file} or {}, files: the other parts
+        bottom up, placements: {file: matrix}} per HOPPER_KITS entry, every
+        insert variant placed) and default ({base, kit, insert}).
+
+    Raises:
+        ValueError: A kit is inconsistent (see hopper.kit_poses()).
     """
-    insert = f"frederick-hopper-insert-{next(iter(cfg.INSERT_VARIANTS))}.stl"
-    return {"insert": ["frederick-hopper-bellows.stl"], "bellows": [insert],
-            "2p-body": ["frederick-hopper-2p-cap.stl"], "2p-cap": ["frederick-hopper-2p-body.stl"]}.get(kind, [])
+    from geometry.grinder import grinder_on_base_pose, throat_pose
+    from geometry.hopper import kit_poses
 
-
-def view_fields(cfg, file, kind):
-    """Where the part and the grinder ghost go in the preview's "Show on grinder" view.
-
-    A base stays put and the ghost stands in its pockets; a hopper part is
-    posed into the throat of the ghost standing upright on the table.
-
-    Args:
-        cfg: Config namespace from load_config().
-        file: STL file name; for hopper parts its stem keys assembly_poses().
-        kind: Key of PRINT_INFO.
-
-    Returns:
-        Dict with placement and ghost_placement (row_major() 4x4s, from the
-        STL's own frame into the view) and partners (kit_partners()).
-    """
-    from geometry.grinder import grinder_on_base_pose, grinder_upright_pose, throat_pose
-    from geometry.hopper import assembly_poses
-
-    if kind == "base":
-        part, ghost = np.eye(4), grinder_on_base_pose(cfg)
-    else:
-        ghost = grinder_upright_pose(cfg)
-        part = ghost @ throat_pose(cfg) @ assembly_poses(cfg)[file.removesuffix(".stl")]
-    return {"placement": row_major(part), "ghost_placement": row_major(ghost), "partners": kit_partners(cfg, kind)}
+    ghost = grinder_on_base_pose(cfg)
+    throat = ghost @ throat_pose(cfg)
+    bases = {name: f"frederick-base-{name}.stl" for name in cfg.BASE_VARIANTS}
+    inserts = {name: f"frederick-hopper-insert-{name}.stl" for name in cfg.INSERT_VARIANTS}
+    kits = []
+    for key, poses in kit_poses(cfg).items():
+        files = {part: list(inserts.values()) if part == "insert" else [f"frederick-hopper-{part}.stl"]
+                 for part in poses}
+        kits.append({"key": key, "inserts": inserts if "insert" in poses else {},
+                     "files": [f for part, fs in files.items() if part != "insert" for f in fs],
+                     "placements": {f: row_major(throat @ poses[part]) for part, fs in files.items() for f in fs}})
+    default = {"base": DEFAULT_BASE if DEFAULT_BASE in bases else next(iter(bases)),
+               "kit": kits[0]["key"], "insert": next(iter(inserts))}
+    return {"ghost": {"file": GHOST_FILE, "placement": row_major(ghost)}, "bases": bases, "kits": kits,
+            "default": default}
 
 
 def build_manifest(cfg, entries):
@@ -166,8 +169,9 @@ def build_manifest(cfg, entries):
         entries: List of (group, part_entry dict), in display order.
 
     Returns:
-        Manifest dict: {"groups": [{"name", "items"}], "parameters": [[name, value]],
-        "ghost": {"file"}} (the ghost STL lives in build/).
+        Manifest dict: {"groups": [{"name", "items"}], "parameters": [[name, value]]}
+        plus final_form()'s ghost (its STL lives in build/), bases, kits and default.
+        Each STL is in one group only, so the downloads list it once.
     """
     groups = {}
     for group, entry in entries:
@@ -185,7 +189,7 @@ def build_manifest(cfg, entries):
         ["Bellows folds", f"{c.BELLOWS_FOLDS}"],
     ]
     return {"groups": [{"name": g, "items": items} for g, items in groups.items()],
-            "parameters": parameters, "ghost": {"file": GHOST_FILE}}
+            "parameters": parameters} | final_form(cfg)
 
 
 def main(argv=None):
@@ -200,7 +204,7 @@ def main(argv=None):
     os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
     entries = []
     for group, file, label, kind, mesh in build_parts(cfg):
-        entry = part_entry(mesh, file, label, kind) | view_fields(cfg, file, kind)
+        entry = part_entry(mesh, file, label, kind)
         mesh.export(os.path.join(ROOT, "stl", file))
         entries.append((group, entry))
         size = " × ".join(f"{v:g}" for v in entry["size_mm"])

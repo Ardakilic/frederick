@@ -1,11 +1,13 @@
-"""Tests for generate.py's manifest logic (no geometry modules needed)."""
+"""Tests for generate.py's manifest logic (no meshes built)."""
 
 import numpy as np
 import pytest
 import trimesh
 
-from generate import GHOST_FILE, build_manifest, kit_partners, part_entry, row_major
+from generate import GHOST_FILE, build_manifest, final_form, part_entry, row_major
 from geometry.common import load_config
+from geometry.grinder import grinder_on_base_pose, throat_pose
+from geometry.hopper import kit_poses
 
 
 def box_on_bed():
@@ -46,7 +48,8 @@ def test_build_manifest_groups_and_parameters():
     params = dict(m["parameters"])
     assert params["Base angle"] == "12°"
     assert params["Spout OD"] == "33.6 mm"
-    assert m["ghost"] == {"file": GHOST_FILE} and GHOST_FILE.endswith(".stl")
+    assert m["ghost"]["file"] == GHOST_FILE and GHOST_FILE.endswith(".stl")
+    assert {"bases", "kits", "default"} <= set(m)
 
 
 def test_row_major_round_trip():
@@ -63,27 +66,43 @@ def test_row_major_round_trip():
     assert not np.allclose(np.reshape(flat, (4, 4), order="F"), pose)   # what fromArray() would build
 
 
-@pytest.mark.parametrize("kind, partners", [
-    ("base", []),
-    ("insert", ["frederick-hopper-bellows.stl"]),
-    ("bellows", ["frederick-hopper-insert-friction.stl"]),
-    ("2p-body", ["frederick-hopper-2p-cap.stl"]),
-    ("2p-cap", ["frederick-hopper-2p-body.stl"]),
-])
-def test_kit_partners(kind, partners):
-    """Insert <-> bellows and body <-> cap are shown together; the base has no partners.
-
-    Args:
-        kind: PRINT_INFO key.
-        partners: Expected partner files.
+def test_final_form_kits():
+    """One manifest kit per HOPPER_KITS entry: its insert slot offers every variant, the other parts follow bottom
+    up, and every part (each insert variant too) has a final placement, grinder_on_base_pose @ throat_pose @ kit pose.
     """
-    assert kit_partners(load_config(), kind) == partners
+    cfg = load_config()
+    ff = final_form(cfg)
+    ghost = grinder_on_base_pose(cfg)
+    inserts = {n: f"frederick-hopper-insert-{n}.stl" for n in cfg.INSERT_VARIANTS}
+    assert [k["key"] for k in ff["kits"]] == list(cfg.HOPPER_KITS)
+    for kit in ff["kits"]:
+        parts = cfg.HOPPER_KITS[kit["key"]]
+        assert kit["inserts"] == (inserts if "insert" in parts else {})
+        assert kit["files"] == [f"frederick-hopper-{p}.stl" for p in parts if p != "insert"]
+        assert set(kit["placements"]) == set(kit["inserts"].values()) | set(kit["files"])
+        poses = kit_poses(cfg)[kit["key"]]
+        for file, flat in kit["placements"].items():
+            part = "insert" if file in inserts.values() else file.removeprefix("frederick-hopper-").removesuffix(".stl")
+            m = np.reshape(flat, (4, 4))   # row-major: reshape gives the matrix back
+            assert m == pytest.approx(ghost @ throat_pose(cfg) @ poses[part], abs=1e-5)
+            assert m[3] == pytest.approx([0, 0, 0, 1]) and np.linalg.det(m[:3, :3]) == pytest.approx(1, abs=1e-5)
+    assert ff["ghost"] == {"file": GHOST_FILE, "placement": row_major(ghost)}
+    assert ff["bases"] == {n: f"frederick-base-{n}.stl" for n in cfg.BASE_VARIANTS}
+    assert ff["default"] == {"base": "frame-solid", "kit": "3-part", "insert": "friction"}
 
 
-@pytest.mark.parametrize("kind, material, hint", [("2p-body", "TPU 95A", "spout down"),
-                                                  ("2p-cap", "PLA/PETG", "top face down")])
-def test_two_piece_print_info(kind, material, hint):
-    """The two-piece hopper parts carry their own material and support-free print hint.
+def test_final_form_default_base_fallback():
+    """Without a frame-solid variant the final form starts on the first base."""
+    cfg = load_config({"BASE_VARIANTS": {"window": {"frame": False, "window": True}}})
+    assert final_form(cfg)["default"]["base"] == "window"
+
+
+@pytest.mark.parametrize("kind, material, hint", [("bellows-capped", "TPU 95A", "cap on the bed"),
+                                                  ("bellows-open", "TPU 95A", "ring on the bed"),
+                                                  ("2p-body", "TPU 95A", "spout down"),
+                                                  ("cap", "PLA/PETG", "top face down")])
+def test_hopper_print_info(kind, material, hint):
+    """Each hopper part carries its own material and support-free print hint.
 
     Args:
         kind: PRINT_INFO key.

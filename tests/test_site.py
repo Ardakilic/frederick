@@ -18,16 +18,30 @@ MANIFEST = {
              "hint": "deck up", "size_mm": [103.0, 190.0, 37.4], "volume_cm3": 80.5, "triangles": 1200},
         ]},
         {"name": "Single-dose hopper", "items": [
-            {"file": "frederick-hopper-bellows.stl", "label": "Bellows", "material": "TPU 95A",
-             "hint": "cap on the bed </script>", "size_mm": [70.0, 70.0, 58.0], "volume_cm3": 20.0,
+            {"file": "frederick-hopper-bellows-open.stl", "label": "Open bellows", "material": "TPU 95A",
+             "hint": "ring on the bed </script>", "size_mm": [70.0, 70.0, 62.1], "volume_cm3": 20.0,
              "triangles": 900},
+            {"file": "frederick-hopper-2p-body.stl", "label": "Two-piece body", "material": "TPU 95A",
+             "hint": "spout down", "size_mm": [70.0, 70.0, 111.3], "volume_cm3": 35.8, "triangles": 1000},
+            {"file": "frederick-hopper-cap.stl", "label": "Cap", "material": "PLA/PETG",
+             "hint": "top face down", "size_mm": [73.0, 73.0, 8.0], "volume_cm3": 14.6, "triangles": 100},
         ]},
     ],
     "parameters": [["Base angle", "10°"], ["Throat ID", "33.8 mm"]],
-    "ghost": {"file": "frederick-grinder-ghost.stl"},
+    "ghost": {"file": "frederick-grinder-ghost.stl", "placement": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]},
+    "bases": {"solid": "frederick-base-solid.stl"},
+    # the cap is shared by two kits: it must still be one download and one embedded mesh
+    "kits": [
+        {"key": "open", "inserts": {}, "files": ["frederick-hopper-bellows-open.stl", "frederick-hopper-cap.stl"],
+         "placements": {}},
+        {"key": "two-piece", "inserts": {}, "files": ["frederick-hopper-2p-body.stl", "frederick-hopper-cap.stl"],
+         "placements": {}},
+    ],
+    "default": {"base": "solid", "kit": "open", "insert": "friction"},
 }
 GHOST = MANIFEST["ghost"]["file"]
-FILES = ["frederick-base-solid.stl", "frederick-hopper-bellows.stl"]
+FILES = ["frederick-base-solid.stl", "frederick-hopper-bellows-open.stl", "frederick-hopper-2p-body.stl",
+         "frederick-hopper-cap.stl"]
 PLACEHOLDERS = ("@MANIFEST@", "@DOWNLOADS@", "@PARAMETERS@", "@MESHES@")
 
 
@@ -101,7 +115,7 @@ def test_download_links_point_at_copied_files(root, page):
         page: Generated page fixture.
     """
     hrefs = re.findall(r'<a href="(stl/[^"]+)" download>', page)
-    assert sorted(urllib.parse.unquote(h) for h in hrefs) == sorted(f"stl/{f}" for f in FILES)
+    assert sorted(urllib.parse.unquote(h) for h in hrefs) == sorted(f"stl/{f}" for f in FILES)   # once each
     for h in hrefs:
         assert (root / "_site" / urllib.parse.unquote(h)).is_file()
     assert not (root / "_site" / "stl" / "stale-unlisted.stl").exists()
@@ -160,13 +174,16 @@ def test_ghost_embedded_not_downloadable(root, page):
 
 
 def test_show_on_grinder_ui(page):
-    """The toggle starts off, the approximation note is there, and matrices are read row-major.
+    """The toggle starts off, the approximation note and the final-form caption are there, matrices are read
+    row-major, and the upright-only view is gone.
 
     Args:
         page: Generated page fixture.
     """
     assert re.search(r'<input type="checkbox" id="on-grinder">\s*Show on grinder', page)
     assert "Approximate grinder for context — not a measured model." in page
+    assert '<p id="final-caption" hidden></p>' in page and '"Final form: "' in page
+    assert "manifest.kits" in page and "upright" not in page and "partners" not in page
     assert "new THREE.Matrix4().set(...m)" in page and ".fromArray(" not in page.split("<script type=\"module\">")[1]
     assert "depthWrite: false" in page
 

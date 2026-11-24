@@ -93,7 +93,7 @@ def throat_pose(cfg):
         cfg: Config namespace from load_config().
 
     Returns:
-        4x4 numpy array; the hopper frame is the one assembly_poses() maps into.
+        4x4 numpy array; the hopper frame is the one hopper.kit_poses() maps into.
     """
     ring_y = cfg.GRINDER_PLATE_D / 2 - cfg.GHOST_RING_FROM_BACK
     return translation_matrix((0, ring_y, cfg.GHOST_RING_TOP - cfg.THROAT_DEPTH))
@@ -110,15 +110,3 @@ def grinder_on_base_pose(cfg):
     """
     deck_centre = cfg.GRINDER_PLATE_D / 2 + cfg.BASE_EDGE_MARGIN
     return deck_to_world(cfg) @ translation_matrix((0, deck_centre, cfg.FOOT_H - cfg.POCKET_DEPTH))
-
-
-def grinder_upright_pose(cfg):
-    """Grinder frame -> a table: the grinder standing level, feet bottoms at z = 0.
-
-    Args:
-        cfg: Config namespace from load_config().
-
-    Returns:
-        4x4 numpy array.
-    """
-    return translation_matrix((0, 0, cfg.FOOT_H))

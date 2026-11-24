@@ -8,6 +8,8 @@
   network (pinned jsDelivr import map). Download links are plain stl/<file>.
   The grinder ghost is embedded the same way but is never a download; the
   manifest's placement matrices are row-major (read with Matrix4.set).
+  "Show on grinder" draws the final form: the last base clicked, the ghost
+  on it and every part of the last hopper kit clicked, in the kit's throat.
 -->
 <html lang="en">
 <head>
@@ -63,6 +65,7 @@ code { font: 0.85em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .toggle { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 0.875rem; cursor: pointer; }
 .toggle input { accent-color: var(--accent); }
 #ghost-note { margin: 4px 0 0; font-size: 0.8rem; color: var(--muted); }
+#final-caption { margin: 8px 0 0; font-size: 0.875rem; }
 #info strong { color: var(--text); }
 ul.downloads { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 ul.downloads li {
@@ -91,6 +94,7 @@ pre {
     <div class="panel">
       <div id="picker"></div>
       <label class="toggle"><input type="checkbox" id="on-grinder"> Show on grinder</label>
+      <p id="final-caption" hidden></p>
       <p id="ghost-note" hidden>Approximate grinder for context — not a measured model.</p>
       <p id="info"></p>
     </div>
@@ -129,6 +133,7 @@ const status = document.getElementById("status");
 const info = document.getElementById("info");
 const onGrinder = document.getElementById("on-grinder");
 const ghostNote = document.getElementById("ghost-note");
+const caption = document.getElementById("final-caption");
 
 // Dynamic imports: a failed CDN load (offline) lands in catch instead of killing the script.
 let THREE, STLLoader, OrbitControls;
@@ -179,17 +184,23 @@ const materials = {
   rigid: new THREE.MeshStandardMaterial({ color: 0xc89b6d, roughness: 0.6 }),
   tpu: new THREE.MeshStandardMaterial({ color: 0x5c6a76, roughness: 0.8 }),
 };
+// The part last clicked, lit a little, so it stands out in the final form without changing colour.
+const lit = (m) => Object.assign(m.clone(), { emissive: new THREE.Color(0xd49a5f), emissiveIntensity: 0.25 });
+const highlight = { rigid: lit(materials.rigid), tpu: lit(materials.tpu) };
 // Translucent without depth writes, so whatever is inside stays visible.
-const faint = (m, opacity) => Object.assign(m.clone(), { transparent: true, opacity, depthWrite: false });
-const ghostMaterial = faint(new THREE.MeshStandardMaterial({ color: 0xa3a6a9, roughness: 0.5 }), 0.25);
-const partnerMaterials = { rigid: faint(materials.rigid, 0.35), tpu: faint(materials.tpu, 0.35) };
+const ghostMaterial = Object.assign(new THREE.MeshStandardMaterial({ color: 0xa3a6a9, roughness: 0.5 }),
+  { transparent: true, opacity: 0.25, depthWrite: false });
 const kind = (item) => (item.material.startsWith("TPU") ? "tpu" : "rigid");
 const byFile = new Map(manifest.groups.flatMap((g) => g.items).map((it) => [it.file, it]));
+const kits = new Map(manifest.kits.map((k) => [k.key, k]));
+const baseName = new Map(Object.entries(manifest.bases).map(([name, file]) => [file, name]));
 // The manifest's matrices are row-major, which is what Matrix4.set() takes (fromArray() would transpose them).
 const rowMajor = (m) => new THREE.Matrix4().set(...m);
 const loader = new STLLoader();
 const cache = new Map();
-let current = null;
+// The final form's slots: the last base and hopper kit (with its insert) clicked, and the part last clicked.
+const d = manifest.default;
+const state = { base: manifest.bases[d.base], kit: d.kit, insert: d.insert, last: manifest.bases[d.base] };
 let request = 0;
 
 function resize() {
@@ -226,35 +237,43 @@ function frame() {
   controls.update();
 }
 
-async function show(item) {
-  current = item;
+// Off: the part last clicked, as printed. On: the final form, [file, row-major placement or null (as printed)].
+function scenePlan() {
+  if (!onGrinder.checked) return [[state.last, null]];
+  const kit = kits.get(state.kit), insert = kit.inserts[state.insert];
+  const parts = insert ? [insert, ...kit.files] : kit.files;
+  return [[state.base, null], ...parts.map((f) => [f, kit.placements[f]]),
+          [manifest.ghost.file, manifest.ghost.placement]];
+}
+
+async function show() {
   const id = ++request;
-  const ghost = onGrinder.checked;
-  ghostNote.hidden = !ghost;
-  const files = ghost ? [item.file, ...item.partners, manifest.ghost.file] : [item.file];
-  status.textContent = "Decoding " + item.file + "…";
+  const final = onGrinder.checked;
+  const plan = scenePlan();
+  const item = byFile.get(state.last);
+  ghostNote.hidden = caption.hidden = !final;
+  status.textContent = "Decoding " + (final ? "the final form" : item.file) + "…";
   info.innerHTML = "";
   let geoms;
   try {
-    geoms = await Promise.all(files.map(geometryFor));
+    geoms = await Promise.all(plan.map(([f]) => geometryFor(f)));
   } catch (e) {
-    if (id === request) status.textContent = "Could not decode " + item.file + ".";
+    if (id === request) status.textContent = "Could not decode the meshes.";
     return;
   }
   if (id !== request) return;  // a newer pick won
   root.clear();
-  if (ghost) {  // the part in assembly position, its kit partners faint, the grinder translucent
-    place(geoms[0], rowMajor(item.placement), materials[kind(item)]);
-    item.partners.forEach((f, i) => {
-      const p = byFile.get(f);
-      place(geoms[i + 1], rowMajor(p.placement), partnerMaterials[kind(p)]);
-    });
-    place(geoms.at(-1), rowMajor(item.ghost_placement), ghostMaterial);
-  } else {
-    place(geoms[0], new THREE.Matrix4(), materials[kind(item)]);
-  }
+  plan.forEach(([f, m], i) => {
+    const material = f === manifest.ghost.file ? ghostMaterial
+      : (final && f === state.last ? highlight : materials)[kind(byFile.get(f))];
+    place(geoms[i], m ? rowMajor(m) : new THREE.Matrix4(), material);
+  });
   frame();
   status.textContent = "";
+  if (final) {
+    const insert = kits.get(state.kit).inserts[state.insert] ? " (" + state.insert + " insert)" : "";
+    caption.textContent = "Final form: " + baseName.get(state.base) + " base · " + state.kit + " hopper" + insert;
+  }
   const p = (t) => { const el = document.createElement("span"); el.textContent = t; return el; };
   const label = document.createElement("strong");
   label.textContent = item.label;
@@ -263,28 +282,40 @@ async function show(item) {
     p(item.size_mm.join(" × ") + " mm · " + item.volume_cm3 + " cm³ · " + item.triangles + " triangles"));
 }
 
+// One row of buttons; entries are [file, pick], pick() fills the slot the button belongs to.
 const buttons = [];
-for (const group of manifest.groups) {
+function section(title, entries) {
   const h = document.createElement("h3");
-  h.textContent = group.name;
+  h.textContent = title;
   const row = document.createElement("div");
   row.className = "variants";
-  for (const item of group.items) {
+  for (const [file, pick] of entries) {
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = item.label;
+    b.textContent = byFile.get(file).label;
+    b.dataset.file = file;
     b.setAttribute("aria-pressed", "false");
     b.addEventListener("click", () => {
       buttons.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-      show(item);
+      pick();
+      state.last = file;
+      show();
     });
     buttons.push(b);
     row.append(b);
   }
   document.getElementById("picker").append(h, row);
 }
-onGrinder.addEventListener("change", () => current && show(current));
-buttons[0]?.click();
+section("Angled base", Object.values(manifest.bases).map((f) => [f, () => { state.base = f; }]));
+// Hopper parts grouped by kit: a shared STL (insert, cap) gets a button in every kit that uses it.
+for (const kit of manifest.kits) {
+  section("Hopper: " + kit.key + " kit", [
+    ...Object.entries(kit.inserts).map(([name, f]) => [f, () => { state.kit = kit.key; state.insert = name; }]),
+    ...kit.files.map((f) => [f, () => { state.kit = kit.key; }]),
+  ]);
+}
+onGrinder.addEventListener("change", show);
+buttons.find((b) => b.dataset.file === state.base)?.click();  // start on the default base
 </script>
 </body>
 </html>

@@ -1,5 +1,6 @@
-"""Tests for the single-dose hopper: insert (both variants), bellows, two-piece body + cap, assembly poses."""
+"""Tests for the single-dose hopper: insert (both variants), capped and open bellows, two-piece body, cap, kits."""
 
+import itertools
 import math
 
 import numpy as np
@@ -9,12 +10,15 @@ from manifold3d import Manifold, Mesh
 from shapely.geometry import Point, box
 
 from geometry.common import load_config, revolve
-from geometry.hopper import (assembly_poses, bellows_profile, build_bellows, build_insert, build_two_piece_body,
-                             build_two_piece_cap, insert_profile, two_piece_body_profile)
+from geometry.hopper import (bellows_open_profile, bellows_profile, build_bellows, build_bellows_open, build_cap,
+                             build_insert, build_two_piece_body, insert_profile, kit_poses, two_piece_body_profile)
 
 TESS = 0.02  # mm, radius error of a 128-gon at these sizes is < 0.005
-STEMS = {"friction": "frederick-hopper-insert-friction", "bellows": "frederick-hopper-bellows",
-         "body": "frederick-hopper-2p-body", "cap": "frederick-hopper-2p-cap"}  # fixture -> STL stem
+KITS = load_config().HOPPER_KITS
+FIXTURES = {"bellows-capped": "bellows", "bellows-open": "bellows_open", "2p-body": "body", "cap": "cap"}  # kit part -> fixture
+# every kit with each insert variant in its insert slot (None: the kit has no insert)
+KIT_CASES = [(kit, insert) for kit, parts in KITS.items()
+             for insert in (load_config().INSERT_VARIANTS if "insert" in parts else [None])]
 
 
 @pytest.fixture(scope="module")
@@ -67,6 +71,19 @@ def bellows(cfg):
 
 
 @pytest.fixture(scope="module")
+def bellows_open(cfg):
+    """Open bellows in print orientation.
+
+    Args:
+        cfg: Default config fixture.
+
+    Returns:
+        trimesh.Trimesh.
+    """
+    return build_bellows_open(cfg)
+
+
+@pytest.fixture(scope="module")
 def body(cfg):
     """Two-piece body in print orientation.
 
@@ -81,7 +98,7 @@ def body(cfg):
 
 @pytest.fixture(scope="module")
 def cap(cfg):
-    """Two-piece cap in print orientation.
+    """Cap in print orientation.
 
     Args:
         cfg: Default config fixture.
@@ -89,7 +106,7 @@ def cap(cfg):
     Returns:
         trimesh.Trimesh.
     """
-    return build_two_piece_cap(cfg)
+    return build_cap(cfg)
 
 
 def section_radii(mesh, z):
@@ -165,7 +182,7 @@ def as_manifold(vertices, faces):
                          tri_verts=np.ascontiguousarray(faces, dtype=np.uint32)))
 
 
-@pytest.mark.parametrize("name", ["friction", "screw", "bellows", "body", "cap"])
+@pytest.mark.parametrize("name", ["friction", "screw", "bellows", "bellows_open", "body", "cap"])
 def test_printable_solid(name, request):
     """Watertight, one body, positive volume, on the bed, no overhang over 45° above the bed.
 
@@ -200,29 +217,43 @@ def test_spout_diameters(cfg, name, wall, request):
     assert r_min == pytest.approx(r_so - getattr(cfg, wall), abs=TESS)
 
 
-def test_capacity(cfg, bellows):
-    """Funnel (spout top to ledge) plus the bellows cavity holds a dose; nothing is counted twice.
+def kit_ml(cfg, kit):
+    """Bean capacity of an assembled kit, nothing counted twice.
+
+    Each part's bean path counts from where the part below stops to its own
+    top: the insert and the body from the spout top, the insert only up to
+    its ledge (the bellows ring fills the socket), a bellows from its ring or
+    cap. The cap only closes the top.
+
+    Args:
+        cfg: Config namespace.
+        kit: HOPPER_KITS key.
+
+    Returns:
+        Capacity in ml.
+    """
+    profiles = {"insert": insert_profile, "2p-body": two_piece_body_profile,
+                "bellows-open": bellows_open_profile, "bellows-capped": bellows_profile}
+    ml = 0.0
+    for part in cfg.HOPPER_KITS[kit]:
+        if part == "cap":
+            continue
+        wall, void = profiles[part](cfg)
+        z0 = cfg.THROAT_DEPTH if part in ("insert", "2p-body") else 0
+        z1 = ledge_z(cfg) if part == "insert" else wall.bounds[3]
+        ml += revolved_ml(void, z0, z1, cfg.SEGMENTS)
+    return ml
+
+
+@pytest.mark.parametrize("kit", KITS)
+def test_kit_capacity(cfg, kit):
+    """Every kit, assembled, holds a dose.
 
     Args:
         cfg: Default config fixture.
-        bellows: Bellows mesh fixture.
+        kit: HOPPER_KITS key.
     """
-    _, insert_void = insert_profile(cfg)
-    _, bellows_void = bellows_profile(cfg)
-    funnel = revolved_ml(insert_void, cfg.THROAT_DEPTH, ledge_z(cfg), cfg.SEGMENTS)
-    cavity = revolved_ml(bellows_void, 0, bellows.bounds[1][2], cfg.SEGMENTS)
-    assert funnel + cavity >= cfg.DOSE_VOLUME_ML
-
-
-def test_two_piece_capacity(cfg, body):
-    """The body's cone and bellows, spout top to collar top, hold a dose.
-
-    Args:
-        cfg: Default config fixture.
-        body: Two-piece body mesh fixture.
-    """
-    _, void = two_piece_body_profile(cfg)
-    assert revolved_ml(void, cfg.THROAT_DEPTH, body.bounds[1][2], cfg.SEGMENTS) >= cfg.DOSE_VOLUME_ML
+    assert kit_ml(cfg, kit) >= cfg.DOSE_VOLUME_ML
 
 
 def test_two_piece_straight_cone(cfg, body):
@@ -251,91 +282,127 @@ def test_cap_diameters(cfg, cap):
     assert r_min == pytest.approx(r_po - cfg.CAP_PLUG_WALL, abs=TESS)
 
 
-def test_plug_fits_collar(cfg, body, cap):
-    """The collar is BELLOWS_OD outside, BELLOWS_RING_WALL thick; the plug is narrower than its bore and no taller.
+@pytest.mark.parametrize("name", ["body", "bellows_open"])
+def test_cap_fits_collar(cfg, name, cap, request):
+    """Both collar parts end in the same collar: BELLOWS_OD outside, BELLOWS_RING_WALL thick, CAP_COLLAR_H of
+    straight bore; the one cap's plug is narrower than that bore and no taller.
 
     Args:
         cfg: Default config fixture.
-        body: Two-piece body mesh fixture.
-        cap: Two-piece cap mesh fixture.
+        name: Fixture name of the two-piece body or the open bellows.
+        cap: Cap mesh fixture.
+        request: pytest request, used to look up the part fixture by name.
     """
-    top = body.bounds[1][2]
-    bore, outer = section_radii(body, top - cfg.TWO_PIECE_COLLAR_H / 2)
+    part = request.getfixturevalue(name)
+    top = part.bounds[1][2]
+    bore, outer = section_radii(part, top - cfg.CAP_COLLAR_H / 2)
     assert outer == pytest.approx(cfg.BELLOWS_OD / 2, abs=TESS)
     assert bore == pytest.approx(cfg.BELLOWS_OD / 2 - cfg.BELLOWS_RING_WALL, abs=TESS)
-    assert section_radii(body, top - cfg.TWO_PIECE_COLLAR_H + 0.01)[0] == pytest.approx(bore, abs=TESS)
+    assert section_radii(part, top - cfg.CAP_COLLAR_H + 0.01)[0] == pytest.approx(bore, abs=TESS)
     assert section_radii(cap, cfg.CAP_T + 0.01)[1] < bore
-    assert cap.extents[2] - cfg.CAP_T <= cfg.TWO_PIECE_COLLAR_H
+    assert cap.extents[2] - cfg.CAP_T <= cfg.CAP_COLLAR_H
 
 
-def test_bellows_bean_path(cfg, bellows):
-    """The narrowest bore of the bellows is at most 6 mm under the funnel top ID.
+@pytest.mark.parametrize("name, floor", [("bellows", "BELLOWS_CAP_T"), ("bellows_open", None)])
+def test_bellows_bean_path(cfg, name, floor, request):
+    """The narrowest bore of each bellows (above the cap, if any) is at most 6 mm under the funnel top ID.
 
     Args:
         cfg: Default config fixture.
-        bellows: Bellows mesh fixture.
+        name: Fixture name of the bellows under test.
+        floor: Config name of the cap thickness to skip, or None.
+        request: pytest request, used to look up the part fixture by name.
     """
-    v = bellows.vertices
-    r = np.hypot(v[:, 0], v[:, 1])[v[:, 2] > cfg.BELLOWS_CAP_T + 1e-6]
+    v = request.getfixturevalue(name).vertices
+    r = np.hypot(v[:, 0], v[:, 1])[v[:, 2] > (getattr(cfg, floor) if floor else 0) + 1e-6]
     assert 2 * r.min() >= cfg.FUNNEL_TOP_ID - 6
 
 
-def test_bellows_fits_socket(cfg, bellows):
-    """Ring OD and height fit the socket.
+@pytest.mark.parametrize("name, at_top", [("bellows", True), ("bellows_open", False)])
+def test_bellows_fits_socket(cfg, name, at_top, request):
+    """Ring OD = SOCKET_ID - BELLOWS_FIT_CLEARANCE, wall BELLOWS_RING_WALL, no deeper than the socket;
+    the capped bellows has it on top, the open one on the bed.
 
     Args:
         cfg: Default config fixture.
-        bellows: Bellows mesh fixture.
+        name: Fixture name of the bellows under test.
+        at_top: The ring is at the top of the print (else at the bottom).
+        request: pytest request, used to look up the part fixture by name.
     """
-    top = bellows.bounds[1][2]
-    assert section_radii(bellows, top - cfg.BELLOWS_RING_H / 2)[1] == pytest.approx(
-        (cfg.SOCKET_ID - cfg.BELLOWS_FIT_CLEARANCE) / 2, abs=TESS)
+    mesh = request.getfixturevalue(name)
+    z = mesh.bounds[1][2] - cfg.BELLOWS_RING_H / 2 if at_top else cfg.BELLOWS_RING_H / 2
+    r_min, r_max = section_radii(mesh, z)
+    r_ro = (cfg.SOCKET_ID - cfg.BELLOWS_FIT_CLEARANCE) / 2
+    assert r_max == pytest.approx(r_ro, abs=TESS)
+    assert r_min == pytest.approx(r_ro - cfg.BELLOWS_RING_WALL, abs=TESS)
     assert cfg.BELLOWS_RING_H <= cfg.SOCKET_DEPTH
 
 
-def test_assembly_pose_keys(cfg):
-    """One 4x4 pose per hopper STL stem; the parts printed in the hopper frame keep identity.
+def test_bellows_open_ends(cfg, bellows_open):
+    """Open at both ends: a ray down the axis passes; its height is ring + flank + folds + collar.
+
+    Args:
+        cfg: Default config fixture.
+        bellows_open: Open bellows mesh fixture.
+    """
+    assert len(hits_z(bellows_open, [(0, 0, -1)], (0, 0, 1))) == 0
+    r_out = cfg.BELLOWS_OD / 2
+    k = cfg.BELLOWS_FOLD_PITCH / 2 / cfg.BELLOWS_FOLD_DEPTH
+    flank = (r_out - (cfg.SOCKET_ID - cfg.BELLOWS_FIT_CLEARANCE) / 2) * k
+    height = (cfg.BELLOWS_RING_H + flank + cfg.BELLOWS_FOLDS * cfg.BELLOWS_FOLD_PITCH
+              + cfg.BELLOWS_RING_WALL + cfg.CAP_COLLAR_H)
+    assert bellows_open.extents[2] == pytest.approx(height)
+
+
+def test_kit_pose_keys(cfg):
+    """One pose per part of every kit; the part in the throat keeps identity, the others are rigid motions.
 
     Args:
         cfg: Default config fixture.
     """
-    poses = assembly_poses(cfg)
-    assert set(poses) == {"frederick-hopper-insert-friction", "frederick-hopper-insert-screw",
-                          "frederick-hopper-bellows", "frederick-hopper-2p-body", "frederick-hopper-2p-cap"}
-    assert all(p.shape == (4, 4) for p in poses.values())
-    for stem in ("frederick-hopper-insert-friction", "frederick-hopper-insert-screw", "frederick-hopper-2p-body"):
-        assert np.array_equal(poses[stem], np.eye(4))
+    poses = kit_poses(cfg)
+    assert list(poses) == list(cfg.HOPPER_KITS)
+    for kit, parts in cfg.HOPPER_KITS.items():
+        assert list(poses[kit]) == parts
+        assert np.array_equal(poses[kit][parts[0]], np.eye(4))
+        for pose in poses[kit].values():
+            assert pose.shape == (4, 4) and np.linalg.det(pose[:3, :3]) == pytest.approx(1)
+    assert np.array_equal(poses["3-part"]["bellows-open"][:3, :3], np.eye(3))   # ring down, not flipped
+    assert poses["3-part"]["bellows-open"][2, 3] == pytest.approx(ledge_z(cfg))
 
 
-@pytest.mark.parametrize("lower, upper", [("friction", "bellows"), ("body", "cap")])
-def test_assembly_seats(cfg, lower, upper, request):
-    """Posed, the upper part does not cut into its partner but touches it: 0.5 mm lower, they overlap.
+@pytest.mark.parametrize("kit, insert", KIT_CASES)
+def test_kit_fits(cfg, kit, insert, request):
+    """In kit pose no two parts cut into each other, and each part touches the one below: 0.5 mm lower, they overlap.
 
     Args:
         cfg: Default config fixture.
-        lower: Fixture name of the part that stays put.
-        upper: Fixture name of the part posed onto it.
+        kit: HOPPER_KITS key.
+        insert: Fixture name of the insert variant in the insert slot, or None.
         request: pytest request, used to look up the part fixtures by name.
     """
-    poses = assembly_poses(cfg)
+    poses = kit_poses(cfg)[kit]
 
-    def placed(name, dz=0.0):
-        """The named part in the hopper frame, lowered by dz.
+    def placed(part, dz=0.0):
+        """The named kit part in the hopper frame, lowered by dz.
 
         Args:
-            name: Fixture name.
+            part: Part name as in HOPPER_KITS.
             dz: Extra drop (mm).
 
         Returns:
             manifold3d.Manifold.
         """
-        mesh = request.getfixturevalue(name)
-        return as_manifold(trimesh.transform_points(mesh.vertices, poses[STEMS[name]]) - (0, 0, dz), mesh.faces)
+        mesh = request.getfixturevalue(insert if part == "insert" else FIXTURES[part])
+        solid = as_manifold(trimesh.transform_points(mesh.vertices, poses[part]) - (0, 0, dz), mesh.faces)
+        assert solid.volume() == pytest.approx(mesh.volume, rel=1e-4)   # a rigid pose keeps it closed and outward
+        return solid
 
-    base = placed(lower)
-    assert placed(upper).volume() == pytest.approx(request.getfixturevalue(upper).volume, rel=1e-4)
-    assert (base ^ placed(upper)).volume() < 1e-3
-    assert (base ^ placed(upper, 0.5)).volume() > 1
+    parts = cfg.HOPPER_KITS[kit]
+    for a, b in itertools.combinations(parts, 2):
+        assert (placed(a) ^ placed(b)).volume() < 1e-3
+    for below, upper in zip(parts, parts[1:]):
+        assert (placed(below) ^ placed(upper, 0.5)).volume() > 1
 
 
 def test_screw_hub(cfg, screw):
@@ -432,19 +499,21 @@ def test_throat_id_moves_spout():
     assert r_max == pytest.approx((35.0 - cfg.SPOUT_CLEARANCE) / 2, abs=TESS)
 
 
-def test_folds_set_bellows_height(cfg):
-    """Each extra fold adds one pitch of height.
+@pytest.mark.parametrize("build", [build_bellows, build_bellows_open])
+def test_folds_set_bellows_height(cfg, build):
+    """Each extra fold adds one pitch of height, to the capped and the open bellows.
 
     Args:
         cfg: Default config fixture.
+        build: Bellows builder.
     """
-    low = build_bellows(load_config({"BELLOWS_FOLDS": 2})).extents[2]
-    high = build_bellows(load_config({"BELLOWS_FOLDS": 5})).extents[2]
+    low = build(load_config({"BELLOWS_FOLDS": 2})).extents[2]
+    high = build(load_config({"BELLOWS_FOLDS": 5})).extents[2]
     assert high - low == pytest.approx(3 * cfg.BELLOWS_FOLD_PITCH)
 
 
 def test_folds_set_body_height(cfg):
-    """Each extra fold adds one pitch to the two-piece body, and its cap pose follows.
+    """Each extra fold adds one pitch to the two-piece body, and the cap pose follows in both cap kits.
 
     Args:
         cfg: Default config fixture.
@@ -452,8 +521,9 @@ def test_folds_set_body_height(cfg):
     low, high = (load_config({"BELLOWS_FOLDS": n}) for n in (2, 5))
     assert build_two_piece_body(high).extents[2] - build_two_piece_body(low).extents[2] == pytest.approx(
         3 * cfg.BELLOWS_FOLD_PITCH)
-    lift = assembly_poses(high)["frederick-hopper-2p-cap"][2, 3] - assembly_poses(low)["frederick-hopper-2p-cap"][2, 3]
-    assert lift == pytest.approx(3 * cfg.BELLOWS_FOLD_PITCH)
+    for kit in ("two-piece", "3-part"):
+        lift = kit_poses(high)[kit]["cap"][2, 3] - kit_poses(low)[kit]["cap"][2, 3]
+        assert lift == pytest.approx(3 * cfg.BELLOWS_FOLD_PITCH)
 
 
 @pytest.mark.parametrize("overrides, build, match", [
@@ -466,24 +536,32 @@ def test_folds_set_body_height(cfg):
     ({"BELLOWS_FOLD_PITCH": 9.0}, "bellows", "flank"),             # 50° flanks need support
     ({"BELLOWS_RING_H": 9.0}, "bellows", "SOCKET_DEPTH"),          # ring deeper than the socket
     ({"SOCKET_ID": 72.0}, "bellows", "fold peaks"),               # ring wider than the folds
+    ({"BELLOWS_FOLD_PITCH": 9.0}, "open", "flank"),                # 50° flanks need support
+    ({"BELLOWS_RING_H": 9.0}, "open", "SOCKET_DEPTH"),             # ring deeper than the socket
+    ({"SOCKET_ID": 72.0}, "open", "fold peaks"),                   # ring wider than the folds
     ({"TWO_PIECE_FUNNEL_H": 15.0}, "body", "half-angle"),          # 47° cone, needs support
     ({"BELLOWS_FOLD_PITCH": 9.0}, "body", "flank"),                # 50° flanks need support
-    ({"CAP_PLUG_H": 7.0}, "cap", "TWO_PIECE_COLLAR_H"),            # plug taller than the collar
+    ({"CAP_PLUG_H": 7.0}, "cap", "CAP_COLLAR_H"),                  # plug taller than the collar
     ({"CAP_PLUG_WALL": 33.0}, "cap", "bore"),                      # plug wall fills the plug
+    ({"HOPPER_KITS": {"x": ["cap", "insert"]}}, "kits", "must start"),         # no part in the throat
+    ({"HOPPER_KITS": {"x": ["insert", "lid"]}}, "kits", "'lid' cannot sit"),   # unknown part
+    ({"HOPPER_KITS": {"x": ["insert", "cap", "cap"]}}, "kits", "on 'cap'"),    # nothing sits on a cap
 ])
 def test_invalid_params(overrides, build, match):
     """Inconsistent hopper parameters raise ValueError naming the problem.
 
     Args:
         overrides: Config overrides passed to load_config().
-        build: Builder to call: insert, screw, bellows, body or cap.
+        build: Builder to call: insert, screw, bellows, open, body, cap or kits (kit_poses).
         match: Regex the ValueError message must match.
     """
     cfg = load_config(overrides)
     builders = {"insert": lambda: build_insert(cfg, screw_hub=False),
                 "screw": lambda: build_insert(cfg, screw_hub=True),
                 "bellows": lambda: build_bellows(cfg),
+                "open": lambda: build_bellows_open(cfg),
                 "body": lambda: build_two_piece_body(cfg),
-                "cap": lambda: build_two_piece_cap(cfg)}
+                "cap": lambda: build_cap(cfg),
+                "kits": lambda: kit_poses(cfg)}
     with pytest.raises(ValueError, match=match):
         builders[build]()

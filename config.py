@@ -78,7 +78,7 @@ INSERT_VARIANTS = {        # one STL per entry: stl/frederick-hopper-insert-<nam
     "screw": {"screw_hub": True},
 }
 
-# --- Bellows (TPU 95A) ----------------------------------------------------------
+# --- Bellows (TPU 95A): capped (cap on the bed) or open (ring on the bed) -----------
 BELLOWS_WALL = 1.2         # mm, wall thickness
 BELLOWS_OD = 70.0          # mm, outer diameter at the fold peaks
 BELLOWS_FOLD_DEPTH = 5.5   # mm, radial fold depth; 5.5 keeps the bean path >= FUNNEL_TOP_ID - 6 (Ø56.6)
@@ -87,22 +87,37 @@ BELLOWS_FOLDS = 4          # count, number of folds
 BELLOWS_RING_H = 8.0       # mm, plug-in ring height; <= SOCKET_DEPTH
 BELLOWS_RING_WALL = 2.0    # mm, plug-in ring wall thickness; ring ID = ring OD - 2 x this
 BELLOWS_FIT_CLEARANCE = 0.3  # mm, diametral; ring OD = SOCKET_ID - this
-BELLOWS_CAP_T = 2.0        # mm, cap thickness
-DOSE_VOLUME_ML = 60.0      # ml, minimum bean capacity of insert + bellows (~20 g beans), and of the two-piece body
+BELLOWS_CAP_T = 2.0        # mm, capped bellows: cap thickness
+DOSE_VOLUME_ML = 60.0      # ml, minimum bean capacity of every hopper kit (~20 g beans)
 
-# --- Two-piece hopper (body TPU 95A, cap PLA/PETG) -------------------------------
+# --- Two-piece hopper body (TPU 95A) ----------------------------------------------
 # Shape reference: the commercial 2-part Fred single-dose hopper - one rubber bellows body
 # (spout, straight conical funnel, ~4 folds, open top) plus a rigid cap that plugs onto the
 # top of the bellows. The body reuses the spout fit, SHOULDER_OD collar, FUNNEL_TOP_ID and
-# the BELLOWS_* folds above; its top collar is BELLOWS_OD outside, BELLOWS_RING_WALL thick.
+# the BELLOWS_* folds above; its top collar is the shared one below.
 TWO_PIECE_WALL = 2.0       # mm, spout and cone wall; a TPU spout needs more wall than SPOUT_WALL
 TWO_PIECE_FUNNEL_H = 35.0  # mm, straight cone height, spout ID -> FUNNEL_TOP_ID, starting TWO_PIECE_WALL above THROAT_DEPTH; half-angle atan((FUNNEL_TOP_ID - spout ID) / 2 / this) must be <= 45° (24.8)
-TWO_PIECE_COLLAR_H = 6.0   # mm, straight bore height of the top collar the cap plugs into
+
+# --- Cap (shared by the two-piece and 3-part kits; PLA/PETG) -----------------------
+# One rigid cap fits both TPU parts that end in the top collar: the two-piece body and the
+# open bellows. The collar is BELLOWS_OD outside, BELLOWS_RING_WALL thick, reached by a 45°
+# chamfer in from the last fold peak.
+CAP_COLLAR_H = 6.0         # mm, straight bore height of the top collar the cap plugs into
 CAP_T = 3.0                # mm, cap disc thickness
 CAP_LIP = 1.5              # mm, cap disc overhang per side; cap OD = BELLOWS_OD + 2 x this
-CAP_PLUG_H = 5.0           # mm, plug ring height; <= TWO_PIECE_COLLAR_H
+CAP_PLUG_H = 5.0           # mm, plug ring height; <= CAP_COLLAR_H
 CAP_PLUG_WALL = 2.0        # mm, plug ring wall thickness
 CAP_FIT_CLEARANCE = 0.1    # mm, diametral; plug OD = collar ID - this
+
+# --- Hopper kits ------------------------------------------------------------------
+# Each kit is the parts printed separately and put together, bottom up: the first goes in
+# the throat, each other part sits on the one below it. Names are STL stems after
+# "frederick-hopper-"; "insert" is a slot for any INSERT_VARIANTS entry.
+HOPPER_KITS = {
+    "3-part": ["insert", "bellows-open", "cap"],        # insert PLA + open bellows TPU + cap PLA
+    "capped-bellows": ["insert", "bellows-capped"],     # insert PLA + bellows with its own TPU cap
+    "two-piece": ["2p-body", "cap"],                    # TPU body (spout, cone, folds) + cap PLA
+}
 
 # --- Grinder ghost (preview only, approximate) ----------------------------------
 # A boxy stand-in for the grinder, drawn translucent by the preview's "Show on grinder"

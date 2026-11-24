@@ -1,9 +1,11 @@
 # AGENTS.md: frederick
 
 Parametric, 3D-printable accessories for the **Lelit Fred (PL043MMI)** coffee
-grinder: an angled base (4 variants), a single-dose hopper insert (2 variants)
-and a TPU bellows, or a two-piece hopper (TPU body + rigid cap). Python builds
-the STLs; a three.js page previews them.
+grinder: an angled base (4 variants) and a single-dose hopper in three kits
+(`3-part`: insert + open TPU bellows + rigid cap; `capped-bellows`: insert +
+capped TPU bellows; `two-piece`: TPU body + the same cap). Python builds the
+STLs; a three.js page previews them, with a "final form" view of base,
+grinder and hopper together.
 
 Remote: `github.com/Ardakilic/frederick`. Site: <https://ardakilic.github.io/frederick/>
 (GitHub Pages, deployed by `.github/workflows/pages.yml` on every push to `main`).
@@ -21,16 +23,16 @@ config.py                  every design parameter, one commented UPPER_CASE cons
 generate.py                builds every part -> stl/*.stl + build/manifest.json; CLI overrides
 geometry/common.py         config load/validate/--set, shapely -> manifold3d -> trimesh helpers
 geometry/base.py           angled base: deck frame, pockets, frame/rim, window, pads, cable notch
-geometry/hopper.py         single-dose insert (+ screw hub), TPU bellows, two-piece body + cap, assembly poses; revolved profiles
-geometry/grinder.py        grinder ghost (preview only, approximate) + poses: throat, on the base, upright
+geometry/hopper.py         insert (+ screw hub), capped + open TPU bellows, two-piece body, shared cap, kit poses; revolved profiles
+geometry/grinder.py        grinder ghost (preview only, approximate) + poses: throat, on the base
 tools/build_site.py        _site/: template + manifest + embedded gzip/base64 STLs and ghost, copies stl/
 preview/template.html      the preview page: CSS, import map, three.js viewer module
 tests/test_base.py         base geometry, measured with vertical rays
-tests/test_hopper.py       insert (both variants), bellows, two-piece body + cap, assembly poses
-tests/test_grinder.py      ghost body, ghost fit on every base and of the hopper in the throat, placements
+tests/test_hopper.py       every hopper part, kit poses, fit + capacity of every kit, the cap on both collars
+tests/test_grinder.py      ghost body, ghost on every base, kits clear of the ghost in the final form, rename check
 tests/test_common.py       mesh helpers
 tests/test_config.py       config loading, validation, --set
-tests/test_generate.py     manifest logic (no geometry needed)
+tests/test_generate.py     manifest logic: entries, kits, final-form placements (no meshes built)
 tests/test_site.py         site build: embedded meshes round-trip, links, placeholders
 stl/                       generated STLs, COMMITTED deliverables (print orientation)
 build/, _site/             generated, gitignored (manifest + grinder ghost STL; the Pages site)
@@ -96,7 +98,7 @@ is built. `--angle` is a shortcut for `BASE_ANGLE`.
   embeds every STL as gzip + base64 of its exact bytes, one
   `<script type="application/octet-stream" id="mesh-<file stem>">` each. The
   page decodes with `DecompressionStream("gzip")` and `STLLoader.parse()`. No
-  `fetch()`, so `_site/index.html` works from `file://` (about 1.7 MB). three.js
+  `fetch()`, so `_site/index.html` works from `file://` (about 2 MB). three.js
   loads by dynamic `import()` from jsDelivr (sends CORS headers), so an offline
   load is caught and explained. Download links stay plain `stl/<file>.stl`.
 - **CI regenerates, tests, then deploys.** The workflow runs `make image`, then
@@ -144,10 +146,13 @@ Read the code for exact formulas; this is the map.
 
 Every part is a solid of revolution: an (r, z) envelope minus a void, revolved
 with `SEGMENTS`. **Print orientation:** insert and two-piece body spout down,
-bellows cap down, two-piece cap top face down, z=0 on the bed. **No-overhang
-rule:** every downward-facing surface is at most `MAX_OVERHANG` = 45° from
-vertical, so no part needs supports; the profiles are built from 45° (or
-steeper) lines and the builders reject parameters that would break that.
+capped bellows cap down, open bellows ring down, cap top face down, z=0 on the
+bed. **No-overhang rule:** every downward-facing surface is at most
+`MAX_OVERHANG` = 45° from vertical, so no part needs supports; the profiles are
+built from 45° (or steeper) lines and the builders reject parameters that
+would break that. Shared pieces have one helper each: `_folds()` (the zig-zag,
+flank check), `_ring()` (plug-in ring radii, socket checks), `_top_collar()`
+(the collar the cap plugs into).
 
 - **Insert** (`build_insert(cfg, screw_hub=)`), bottom up: the spout (OD
   `THROAT_ID - SPOUT_CLEARANCE`, `THROAT_DEPTH` long) into the throat; a 45°
@@ -158,26 +163,41 @@ steeper) lines and the builders reject parameters that would break that.
   stops the bellows. Variants (`INSERT_VARIANTS`): `friction` (spout fit only)
   and `screw` (adds a hub on spokes inside the spout, with a hole for the
   stock central screw).
-- **Bellows** (`build_bellows`): cap down, then zig-zag folds with 45° flanks
-  (`BELLOWS_FOLD_PITCH` >= 2 x `BELLOWS_FOLD_DEPTH`), then the plug-in ring
-  (OD `SOCKET_ID - BELLOWS_FIT_CLEARANCE`) that pushes into the insert socket.
-  The tests enforce the combined capacity >= `DOSE_VOLUME_ML`. `_folds()`
-  builds the zig-zag (and checks the flanks) for both the bellows and the body.
+- **Capped bellows** (`build_bellows`, `frederick-hopper-bellows-capped`): cap
+  down, then zig-zag folds with 45° flanks (`BELLOWS_FOLD_PITCH` >= 2 x
+  `BELLOWS_FOLD_DEPTH`), then the plug-in ring (OD `SOCKET_ID -
+  BELLOWS_FIT_CLEARANCE`, `BELLOWS_RING_H`) that pushes into the insert socket.
+- **Open bellows** (`build_bellows_open`, `frederick-hopper-bellows-open`), ring
+  down: the same ring on the bed, a flank out to the first peak, the same
+  folds, then the top collar. Open at both ends; the inside flares out of the
+  ring bore along the first flank.
 - **Two-piece body** (`build_two_piece_body`, TPU 95A; reference: the commercial
   2-part Fred hopper), bottom up: the insert's spout and 45° collar, walls
   `TWO_PIECE_WALL`; the bore runs a wall past the spout top, then a straight
   cone to `FUNNEL_TOP_ID` over `TWO_PIECE_FUNNEL_H` (half-angle <= 45°); the
   bellows folds, placed so the first flank's inner face starts at the cone top;
-  a 45° chamfer in to the top collar (OD `BELLOWS_OD`, wall `BELLOWS_RING_WALL`,
-  straight bore `TWO_PIECE_COLLAR_H`). Open on top.
-- **Two-piece cap** (`build_two_piece_cap`, PLA/PETG): a `CAP_T` disc, OD
-  `BELLOWS_OD + 2 * CAP_LIP`, with a plug ring (`CAP_PLUG_H` <=
-  `TWO_PIECE_COLLAR_H`, wall `CAP_PLUG_WALL`, OD collar ID - `CAP_FIT_CLEARANCE`).
-  Nothing else: a recessed face would bridge on the bed side.
-- **Assembly** (`assembly_poses(cfg)`): STL stem -> 4x4 pose from print
-  orientation into the hopper frame (spout bottom at the origin, z up). Inserts
-  and body: identity; bellows flipped onto the socket ledge; cap flipped, disc
-  on the collar top. The tests check each pair touches without overlapping.
+  then the top collar. Open on top.
+- **Top collar** (`_top_collar`, shared by the body and the open bellows): OD
+  `BELLOWS_OD`, a 45° chamfer in to wall `BELLOWS_RING_WALL`, straight bore
+  `CAP_COLLAR_H`. One collar, so one cap fits both.
+- **Cap** (`build_cap`, `frederick-hopper-cap`, PLA/PETG): a `CAP_T` disc, OD
+  `BELLOWS_OD + 2 * CAP_LIP`, with a plug ring (`CAP_PLUG_H` <= `CAP_COLLAR_H`,
+  wall `CAP_PLUG_WALL`, OD collar ID - `CAP_FIT_CLEARANCE`). Nothing else: a
+  recessed face would bridge on the bed side.
+- **Kits** (`HOPPER_KITS` in `config.py`, the one place they are defined): kit
+  key -> part names bottom up, as STL stems after `frederick-hopper-`;
+  `insert` is a slot for any `INSERT_VARIANTS` entry. Defaults: `3-part`
+  (insert, bellows-open, cap), `capped-bellows` (insert, bellows-capped),
+  `two-piece` (2p-body, cap).
+- **Kit poses** (`kit_poses(cfg)` -> `{kit: {part: 4x4}}`): print orientation ->
+  hopper frame (spout bottom at the origin, z up). Each kit is a stack: the
+  first part (insert or 2p-body) keeps identity; each other part sits on the
+  seat of the one below (insert: the socket ledge; body and open bellows:
+  the collar top) by its mount (open bellows as printed, capped bellows and
+  cap flipped). A kit that starts elsewhere or stacks a part on one without a
+  seat raises `ValueError`. The tests check, for every kit and insert variant,
+  that no two parts overlap and each touches the one below (0.5 mm lower, they
+  overlap), and that every kit holds >= `DOSE_VOLUME_ML`.
 
 ### Grinder ghost (`geometry/grinder.py`, preview only)
 
@@ -194,14 +214,30 @@ reference. Pieces run into their neighbours so the union is one body.
 frame -> grinder frame (spout bottom on the bore floor, collar on the ring
 top); `grinder_on_base_pose` grinder frame -> base world, reusing
 `base.deck_to_world` (plate centre over the deck centre, plate underside at
-w = `FOOT_H - POCKET_DEPTH`); `grinder_upright_pose` feet on z = 0.
-`generate.py` writes the ghost to `build/frederick-grinder-ghost.stl` (never
-`stl/`) and gives each manifest entry `placement` and `ghost_placement`
-(row-major 16 floats: the page uses `Matrix4.set(...m)`; `fromArray` would
-transpose) plus `partners` (insert <-> bellows, body <-> cap). The page's
-"Show on grinder" toggle (off by default) draws the ghost translucent
-(opacity 0.25, no depth writes), the part in assembly position and its
-partners faint, and refits the camera. The ghost is embedded, never linked.
+w = `FOOT_H - POCKET_DEPTH`). `generate.py` writes the ghost to
+`build/frederick-grinder-ghost.stl` (never `stl/`).
+
+### Final-form view (`generate.final_form`, `preview/template.html`)
+
+The manifest carries `ghost` (`file`, `placement` = `grinder_on_base_pose`),
+`bases` (variant -> file), `kits` (per `HOPPER_KITS` entry: `key`, `inserts`
+variant -> file or `{}`, `files` the other parts bottom up, `placements` file
+-> `grinder_on_base_pose @ throat_pose @ kit pose`, every insert variant
+included) and `default` (`frame-solid` if it exists, the first kit, the first
+insert). Matrices are row-major 16 floats rounded to 6 decimals: the page uses
+`Matrix4.set(...m)`; `fromArray` would transpose. No placement depends on the
+base variant. `groups` (the downloads) lists each STL once.
+
+The page picker has the base variants, then one row per kit (a shared STL
+gets a button in every kit using it). It keeps three slots: base, kit (with
+its insert variant) and the part last clicked; a click fills its slot. With
+"Show on grinder" off it shows the clicked part as printed; on, the final
+form: the base (identity), every part of the kit at its placement, the ghost
+translucent (opacity 0.25, no depth writes), a caption ("Final form:
+frame-solid base · 3-part hopper (friction insert)"), the clicked part lit
+slightly (emissive), the camera refitted. Printed parts are opaque, rigid tan
+and TPU slate. The ghost is embedded, never linked. On load the default base
+button is pressed, so the slots and the pressed button agree.
 
 ## Research and sources
 

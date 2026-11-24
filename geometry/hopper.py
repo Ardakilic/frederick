@@ -1,10 +1,12 @@
-"""Single-dose hopper: a printed insert for the grinder throat and a TPU bellows,
-or the two-piece variant: a TPU body (spout, cone, bellows) and a rigid cap.
+"""Single-dose hopper parts: a printed insert for the grinder throat, a capped or
+open TPU bellows, a TPU two-piece body (spout, cone, bellows) and a rigid cap
+that fits both the body and the open bellows. config.HOPPER_KITS groups them.
 
 Every part is a solid of revolution. Each (r, z) profile is an outer envelope
 minus a void, so every wall comes from the same few lines. Print orientation:
-insert and body spout down, bellows cap down, cap top face down, z=0 on the bed.
-assembly_poses() maps each part into the assembled hopper frame.
+insert and body spout down, capped bellows cap down, open bellows ring down,
+cap top face down, z=0 on the bed. kit_poses() maps each kit's parts into the
+assembled hopper frame.
 """
 
 import math
@@ -13,6 +15,7 @@ import numpy as np
 from shapely.affinity import rotate
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
+from trimesh.transformations import translation_matrix
 
 from geometry.common import prism, revolve, to_trimesh
 
@@ -53,6 +56,48 @@ def _folds(cfg, z0):
     _check([(0 < flank <= MAX_OVERHANG, f"bellows flank {flank:.1f}° from vertical must be in (0, {MAX_OVERHANG:g}]: "
                                         "BELLOWS_FOLD_PITCH must be >= 2 * BELLOWS_FOLD_DEPTH")])
     return [(r_in if i % 2 else r_out, z0 + i * half) for i in range(2 * cfg.BELLOWS_FOLDS + 1)]
+
+
+def _ring(cfg):
+    """Radii of the plug-in ring that pushes into the insert socket (capped and open bellows).
+
+    Args:
+        cfg: Config namespace from load_config().
+
+    Returns:
+        (r_ro, r_ri): ring outer radius (SOCKET_ID - BELLOWS_FIT_CLEARANCE) / 2 and inner radius (mm).
+
+    Raises:
+        ValueError: The ring is deeper than the socket, or does not fit inside the fold peaks.
+    """
+    r_ro = (cfg.SOCKET_ID - cfg.BELLOWS_FIT_CLEARANCE) / 2
+    r_ri = r_ro - cfg.BELLOWS_RING_WALL
+    _check([
+        (cfg.BELLOWS_RING_H <= cfg.SOCKET_DEPTH, "BELLOWS_RING_H must be <= SOCKET_DEPTH"),
+        (0 < r_ri < r_ro < cfg.BELLOWS_OD / 2, "ring must sit inside the fold peaks: SOCKET_ID - "
+                                               "BELLOWS_FIT_CLEARANCE < BELLOWS_OD, and BELLOWS_RING_WALL < ring radius"),
+    ])
+    return r_ro, r_ri
+
+
+def _top_collar(cfg, z_pk):
+    """The top collar the cap plugs into (two-piece body, open bellows), above the last fold peak.
+
+    Outside it carries on straight up at BELLOWS_OD; inside it steps in to
+    BELLOWS_RING_WALL over a 45° chamfer, then runs CAP_COLLAR_H straight.
+
+    Args:
+        cfg: Config namespace from load_config().
+        z_pk: Height of the last fold peak (mm).
+
+    Returns:
+        (z_top, ring): the collar's top height, and the (r, z) Polygon to take
+        out of the part's void (it runs 1 mm past z_top, as the voids do).
+    """
+    r_out = cfg.BELLOWS_OD / 2
+    r_cb = r_out - cfg.BELLOWS_RING_WALL  # collar bore
+    z_top = z_pk + r_out - r_cb + cfg.CAP_COLLAR_H
+    return z_top, Polygon([(r_out, z_pk), (r_cb, z_pk + r_out - r_cb), (r_cb, z_top + 1), (r_out, z_top + 1)])
 
 
 def insert_profile(cfg):
@@ -176,13 +221,7 @@ def bellows_profile(cfg):
             does not fit the socket or the folds.
     """
     r_out = cfg.BELLOWS_OD / 2
-    r_ro = (cfg.SOCKET_ID - cfg.BELLOWS_FIT_CLEARANCE) / 2
-    r_ri = r_ro - cfg.BELLOWS_RING_WALL
-    _check([
-        (cfg.BELLOWS_RING_H <= cfg.SOCKET_DEPTH, "BELLOWS_RING_H must be <= SOCKET_DEPTH"),
-        (0 < r_ri < r_ro < r_out, "ring must sit inside the fold peaks: SOCKET_ID - BELLOWS_FIT_CLEARANCE "
-                                  "< BELLOWS_OD, and BELLOWS_RING_WALL < ring radius"),
-    ])
+    r_ro, r_ri = _ring(cfg)
     k = cfg.BELLOWS_FOLD_PITCH / 2 / cfg.BELLOWS_FOLD_DEPTH  # rise per mm of radius along a flank
     z0 = cfg.BELLOWS_CAP_T
     folds = _folds(cfg, z0)
@@ -199,7 +238,7 @@ def bellows_profile(cfg):
 
 
 def build_bellows(cfg):
-    """TPU bellows: plugs into the insert socket; press it to blow out grounds.
+    """Capped TPU bellows: plugs into the insert socket; press it to blow out grounds.
 
     Args:
         cfg: Config namespace from load_config().
@@ -214,6 +253,58 @@ def build_bellows(cfg):
     return to_trimesh(revolve(wall, cfg.SEGMENTS))
 
 
+def bellows_open_profile(cfg):
+    """(r, z) profile of the open bellows: plug-in ring, zig-zag folds, top collar.
+
+    Bottom up: the capped bellows' ring (it plugs into the insert socket and
+    rests on the ledge), one flank out to the first fold peak, the same folds,
+    then the two-piece body's top collar, so the one cap fits both. The inside
+    is the outer zig-zag moved in by BELLOWS_WALL; it flares out of the ring
+    bore along the first flank.
+
+    Args:
+        cfg: Config namespace from load_config().
+
+    Returns:
+        (wall, void): shapely Polygons. wall is the part's profile; void is
+        the bean path, open from below the ring to above the collar.
+
+    Raises:
+        ValueError: The flanks are flatter than 45° from vertical, or the ring
+            does not fit the socket or the folds.
+    """
+    r_out = cfg.BELLOWS_OD / 2
+    r_ro, r_ri = _ring(cfg)
+    k = cfg.BELLOWS_FOLD_PITCH / 2 / cfg.BELLOWS_FOLD_DEPTH  # rise per mm of radius along a flank
+    z0 = cfg.BELLOWS_RING_H + (r_out - r_ro) * k  # first peak: a flank out from the ring top
+    folds = _folds(cfg, z0)
+    z_top, collar = _top_collar(cfg, folds[-1][1])
+    envelope = Polygon([(0, 0), (r_ro, 0), (r_ro, cfg.BELLOWS_RING_H), *folds, (r_out, z_top), (0, z_top)])
+    # inside: the outer line moved in, its first flank carried back down until it passes the ring ID
+    inner = LineString([(r_ri, z0 - (r_out - r_ri) * k), *folds, (r_out, z_top + 1)]).offset_curve(
+        cfg.BELLOWS_WALL).coords
+    void = (Polygon([(0, inner[0][1]), *inner, (0, inner[-1][1])])
+            .union(box(0, -1, r_ri, z0))
+            .difference(collar))
+    return envelope.difference(void), void
+
+
+def build_bellows_open(cfg):
+    """Open TPU bellows for the 3-part kit: plugs into the insert socket, the cap plugs into its top.
+
+    Args:
+        cfg: Config namespace from load_config().
+
+    Returns:
+        trimesh.Trimesh in mm, ring down, z=0 on the bed.
+
+    Raises:
+        ValueError: The bellows parameters are inconsistent.
+    """
+    wall, _ = bellows_open_profile(cfg)
+    return to_trimesh(revolve(wall, cfg.SEGMENTS))
+
+
 def two_piece_body_profile(cfg):
     """(r, z) profile of the two-piece body: spout, collar, straight cone, bellows, top collar.
 
@@ -221,8 +312,8 @@ def two_piece_body_profile(cfg):
     so the corner keeps a full wall, then a straight cone out to FUNNEL_TOP_ID,
     TWO_PIECE_WALL thick. The folds sit on it, placed so the inner face of the
     flank below the first peak starts at the cone top; their inside is the
-    outer zig-zag moved in by BELLOWS_WALL. The top collar's bore steps in to
-    BELLOWS_RING_WALL over a 45° chamfer, then runs TWO_PIECE_COLLAR_H straight.
+    outer zig-zag moved in by BELLOWS_WALL. Then the shared top collar
+    (_top_collar()): bore 45° in to BELLOWS_RING_WALL, then CAP_COLLAR_H straight.
 
     Args:
         cfg: Config namespace from load_config().
@@ -240,7 +331,6 @@ def two_piece_body_profile(cfg):
     r_ft = cfg.FUNNEL_TOP_ID / 2
     r_out = cfg.BELLOWS_OD / 2
     r_in = r_out - cfg.BELLOWS_FOLD_DEPTH
-    r_cb = r_out - cfg.BELLOWS_RING_WALL  # collar bore
     half = cfg.BELLOWS_FOLD_PITCH / 2
     k = half / cfg.BELLOWS_FOLD_DEPTH  # rise per mm of radius along a flank
     z_t = cfg.THROAT_DEPTH
@@ -253,14 +343,12 @@ def two_piece_body_profile(cfg):
     # first peak: the flank below it, moved in by BELLOWS_WALL, passes through the cone top
     folds = _folds(cfg, z_c + k * (r_out - r_ft) - cfg.BELLOWS_WALL * math.hypot(1, k))
     v0 = (r_in, folds[0][1] - half)  # the valley that flank comes from
-    z_pk = folds[-1][1]
-    z_top = z_pk + r_out - r_cb + cfg.TWO_PIECE_COLLAR_H
+    z_top, ring = _top_collar(cfg, folds[-1][1])
     collar = Polygon([(0, 0), (r_so, 0), (r_so, z_t), (r_sh, z_t + r_sh - r_so), (r_sh, z_c), (0, z_c)])
     cone_wall = LineString([(r_si, z_n), (r_ft, z_c)]).buffer(cfg.TWO_PIECE_WALL, quad_segs=cfg.SEGMENTS // 4)
     bellows = Polygon([(0, v0[1] - r_in), v0, *folds, (r_out, z_top), (0, z_top)])  # 45° underside
     inner = LineString([v0, *folds, (r_out, z_top + 1)]).offset_curve(cfg.BELLOWS_WALL).coords
     void = Polygon([(0, -1), (r_si, -1), (r_si, z_n), (r_ft, z_c), *[p for p in inner if p[1] > z_c], (0, z_top + 1)])
-    ring = Polygon([(r_out, z_pk), (r_cb, z_pk + r_out - r_cb), (r_cb, z_top + 1), (r_out, z_top + 1)])
     void = void.difference(ring)
     return unary_union([collar, cone_wall, bellows]).difference(void), void
 
@@ -281,8 +369,11 @@ def build_two_piece_body(cfg):
     return to_trimesh(revolve(wall, cfg.SEGMENTS))
 
 
-def build_two_piece_cap(cfg):
-    """Two-piece hopper cap (PLA/PETG): a lipped disc with a plug ring that pushes into the body's collar.
+def build_cap(cfg):
+    """Hopper cap (PLA/PETG): a lipped disc with a plug ring that pushes into the top collar.
+
+    The two-piece body and the open bellows share that collar, so this one
+    cap fits both.
 
     Args:
         cfg: Config namespace from load_config().
@@ -297,8 +388,8 @@ def build_two_piece_cap(cfg):
     r_pi = r_po - cfg.CAP_PLUG_WALL
     r_d = cfg.BELLOWS_OD / 2 + cfg.CAP_LIP
     _check([
-        (0 < cfg.CAP_PLUG_H <= cfg.TWO_PIECE_COLLAR_H, "CAP_PLUG_H must be in (0, TWO_PIECE_COLLAR_H]: "
-                                                       "the plug must fit the collar"),
+        (0 < cfg.CAP_PLUG_H <= cfg.CAP_COLLAR_H, "CAP_PLUG_H must be in (0, CAP_COLLAR_H]: "
+                                                 "the plug must fit the collar"),
         (0 < cfg.CAP_PLUG_WALL < r_po, "CAP_PLUG_WALL must be > 0 and leave a bore (< plug OD / 2)"),
     ])
     t, z = cfg.CAP_T, cfg.CAP_T + cfg.CAP_PLUG_H
@@ -320,23 +411,43 @@ def _flipped(z):
     return pose
 
 
-def assembly_poses(cfg):
-    """Poses from print orientation into the assembled hopper frame: spout bottom at the origin, z up.
+def kit_poses(cfg):
+    """Poses from print orientation into the assembled hopper frame, per kit: spout bottom at the origin, z up.
+
+    Each HOPPER_KITS entry is a bottom-up stack. Its first part (insert or
+    two-piece body) goes in the throat and keeps identity; every other part
+    sits on the one below it: a bellows ring (capped bellows flipped) on the
+    insert's socket ledge, the cap flipped with its disc on a collar top.
 
     Args:
         cfg: Config namespace from load_config().
 
     Returns:
-        Dict STL file stem -> 4x4 numpy array. Insert variants and the body:
-        identity. Bellows: flipped, its ring resting on the insert's socket
-        ledge. Cap: flipped, plug inside the collar, disc on the collar top.
+        Dict kit key -> {part name as in HOPPER_KITS -> 4x4 numpy array}. The
+        "insert" pose holds for every INSERT_VARIANTS entry.
 
     Raises:
-        ValueError: The bellows or body parameters are inconsistent.
+        ValueError: A kit does not start with a part for the throat, or stacks
+            a part on one that has no seat for it, or a part's parameters are
+            inconsistent.
     """
     ledge = cfg.THROAT_DEPTH + cfg.INSERT_WALL + cfg.FUNNEL_H  # as in insert_profile
-    poses = {f"frederick-hopper-insert-{name}": np.eye(4) for name in cfg.INSERT_VARIANTS}
-    poses["frederick-hopper-bellows"] = _flipped(ledge + bellows_profile(cfg)[0].bounds[3])
-    poses["frederick-hopper-2p-body"] = np.eye(4)
-    poses["frederick-hopper-2p-cap"] = _flipped(two_piece_body_profile(cfg)[0].bounds[3] + cfg.CAP_T)
-    return poses
+    # where the next part up rests: a height in this part's own frame
+    seats = {"insert": ledge, "2p-body": two_piece_body_profile(cfg)[0].bounds[3],
+             "bellows-open": bellows_open_profile(cfg)[0].bounds[3]}
+    # print orientation -> resting on a seat at the origin
+    mounts = {"bellows-open": np.eye(4), "bellows-capped": _flipped(bellows_profile(cfg)[0].bounds[3]),
+              "cap": _flipped(cfg.CAP_T)}
+    kits = {}
+    for kit, parts in cfg.HOPPER_KITS.items():
+        pairs = list(zip(parts, parts[1:]))
+        _check([(bool(parts) and parts[0] in ("insert", "2p-body"),
+                 f"HOPPER_KITS[{kit!r}] must start with 'insert' or '2p-body' (the part in the throat)")]
+               + [(below in seats and part in mounts, f"HOPPER_KITS[{kit!r}]: {part!r} cannot sit on {below!r}")
+                  for below, part in pairs])
+        poses = {parts[0]: np.eye(4)}
+        for below, part in pairs:
+            seat = poses[below] @ (0, 0, seats[below], 1)
+            poses[part] = translation_matrix(seat[:3]) @ mounts[part]
+        kits[kit] = poses
+    return kits
